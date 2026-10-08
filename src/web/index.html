@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Craft Library</title>
+    <style>
+      @font-face {
+        font-family: DM;
+        src: url(data:font/ttf;base64,__BODY_FONT__);
+      }
+      @font-face {
+        font-family: Space;
+        src: url(data:font/ttf;base64,__DISPLAY_FONT__);
+      }
+      :root {
+        color-scheme: dark;
+        --bg: #161616;
+        --panel: #202020;
+        --raised: #272727;
+        --hover: #303030;
+        --line: #343434;
+        --text: #e9e9e9;
+        --muted: #929292;
+        --subtle: #676767;
+        --button: #ececec;
+        --button-text: #181818;
+        --shadow: 0 12px 40px #0004;
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #e9e9e9;
+        --panel: #fafafa;
+        --raised: #f0f0f0;
+        --hover: #e5e5e5;
+        --line: #d9d9d9;
+        --text: #252525;
+        --muted: #727272;
+        --subtle: #999;
+        --button: #252525;
+        --button-text: #fff;
+        --shadow: 0 12px 40px #0001;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          13px DM,
+          Arial,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid transparent;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        border-radius: 6px;
+        padding: 7px 10px;
+        transition: background 0.12s;
+      }
+      button:hover {
+        background: var(--hover);
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--text);
+        outline-offset: 2px;
+      }
+      svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex-shrink: 0;
+      }
+      .icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 5px;
+      }
+      .primary {
+        background: var(--button);
+        color: var(--button-text);
+        font-weight: 600;
+        border-color: var(--button);
+      }
+      .primary:hover {
+        opacity: 0.88;
+        background: var(--button);
+      }
+      .secondary {
+        border-color: var(--line);
+        background: var(--raised);
+      }
+      .quiet {
+        color: var(--muted);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .tiny {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      #chrome {
+        height: 48px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 15px 0 86px;
+        user-select: none;
+      }
+      #chrome img {
+        width: 25px;
+        height: 25px;
+        border-radius: 6px;
+      }
+      #chrome strong {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      #drag {
+        flex: 1;
+        height: 100%;
+      }
+      .themes {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        padding: 2px;
+        border-radius: 7px;
+        display: flex;
+        gap: 2px;
+      }
+      .themes button {
+        padding: 4px 9px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .themes button.active {
+        background: var(--hover);
+        color: var(--text);
+      }
+      #layout {
+        height: calc(100vh - 76px);
+        display: grid;
+        grid-template-columns: 200px minmax(380px, 1fr) 304px;
+        gap: 8px;
+        padding: 0 10px;
+      }
+      aside,
+      main,
+      #inspector {
+        background: var(--panel);
+        border-radius: 9px;
+        overflow: hidden;
+        min-width: 0;
+      }
+      aside {
+        display: flex;
+        flex-direction: column;
+        padding: 14px 10px;
+      }
+      .workspace {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 15px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .workspace svg {
+        color: var(--muted);
+      }
+      nav {
+        display: grid;
+        gap: 3px;
+      }
+      nav button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-align: left;
+        padding: 9px 10px;
+        color: var(--muted);
+      }
+      nav button.active {
+        background: var(--hover);
+        color: var(--text);
+      }
+      nav .count {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .divider {
+        height: 1px;
+        background: var(--line);
+        margin: 17px 8px;
+      }
+      #side-apps {
+        overflow: auto;
+        flex: 1;
+        margin: 8px 0;
+      }
+      .side-app {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        text-align: left;
+        color: var(--muted);
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+      .side-app.active {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .side-app img {
+        width: 21px;
+        height: 21px;
+        border-radius: 5px;
+        filter: grayscale(1);
+      }
+      .sidebar-footer {
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+        display: grid;
+      }
+      .sidebar-footer button {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--muted);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+      }
+      .main-top {
+        height: 45px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 0 17px;
+        gap: 8px;
+      }
+      .breadcrumb {
+        font-size: 11px;
+        color: var(--muted);
+        flex: 1;
+      }
+      .main-top .tab {
+        font-size: 12px;
+        background: var(--raised);
+        padding: 5px 10px;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .content {
+        overflow: auto;
+        padding: 23px 23px 30px;
+        flex: 1;
+      }
+      h1 {
+        font:
+          600 25px Space,
+          DM,
+          sans-serif;
+        letter-spacing: -0.8px;
+        margin: 0 0 7px;
+      }
+      h2 {
+        font:
+          600 18px Space,
+          DM,
+          sans-serif;
+        margin: 0 0 6px;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .filters {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        margin: 22px 0 18px;
+      }
+      .search {
+        position: relative;
+        flex: 1;
+      }
+      .search svg {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        color: var(--muted);
+      }
+      input[type="search"] {
+        width: 100%;
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 9px 9px 9px 32px;
+        color: var(--text);
+        font-size: 12px;
+      }
+      select {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px;
+        color: var(--muted);
+        max-width: 145px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+        gap: 10px;
+      }
+      .app-card {
+        padding: 16px 15px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        min-height: 159px;
+        position: relative;
+      }
+      .app-card:hover {
+        background: var(--raised);
+        border-color: var(--subtle);
+      }
+      .app-card.selected {
+        border-color: var(--muted);
+        background: var(--raised);
+      }
+      .card-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .app-card img {
+        height: 35px;
+        width: 35px;
+        border-radius: 8px;
+        filter: grayscale(1);
+        opacity: 0.95;
+      }
+      .app-card strong {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .category {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .description {
+        font-size: 11.5px;
+        line-height: 1.5;
+        margin-top: 13px;
+        flex: 1;
+        color: var(--muted);
+      }
+      .card-bottom {
+        margin-top: 15px;
+        padding-top: 9px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .card-bottom svg {
+        width: 13px;
+        height: 13px;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 5px;
+        height: 5px;
+        background: var(--muted);
+        border-radius: 50%;
+        margin-right: 5px;
+      }
+      .empty {
+        padding: 40px 10px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #inspector {
+        display: flex;
+        flex-direction: column;
+      }
+      .inspector-top {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .inspector-top .icon-button {
+        margin-left: auto;
+      }
+      .inspector-body {
+        padding: 21px 18px;
+        overflow: auto;
+        flex: 1;
+      }
+      .detail-heading {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 21px;
+      }
+      .detail-heading img {
+        width: 45px;
+        height: 45px;
+        border-radius: 10px;
+        filter: grayscale(1);
+      }
+      .detail-heading h2 {
+        font-size: 20px;
+      }
+      .detail-description {
+        margin-bottom: 20px;
+        font-size: 12px;
+      }
+      .install-row {
+        display: flex;
+        gap: 7px;
+      }
+      .install-row .primary {
+        flex: 1;
+        padding: 10px;
+      }
+      .install-row .secondary {
+        padding: 10px 15px;
+      }
+      .install-note {
+        font-size: 10px;
+        line-height: 1.6;
+        margin: 10px 0 21px;
+        color: var(--muted);
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        margin: 11px 0;
+      }
+      .info-row span:first-child {
+        color: var(--muted);
+      }
+      .section-rule {
+        height: 1px;
+        background: var(--line);
+        margin: 19px 0;
+      }
+      details {
+        margin: 15px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--muted);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      summary:before {
+        content: "›";
+        font-size: 16px;
+      }
+      details[open] summary:before {
+        transform: rotate(90deg);
+      }
+      .detail-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 12px;
+      }
+      .detail-buttons button {
+        font-size: 11px;
+      }
+      .provenance {
+        font:
+          10.5px ui-monospace,
+          monospace;
+        word-break: break-all;
+        line-height: 1.7;
+        color: var(--muted);
+        margin-top: 12px;
+      }
+      .build-note {
+        font-size: 11px;
+        margin: 11px 0;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+      .right-bottom {
+        font-size: 10px;
+        padding: 11px 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .right-bottom svg {
+        width: 13px;
+        height: 13px;
+      }
+      #status {
+        height: 28px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0 18px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      #status-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .progress {
+        height: 3px;
+        border-radius: 4px;
+        background: var(--line);
+        overflow: hidden;
+        width: 85px;
+      }
+      .progress i {
+        display: block;
+        height: 100%;
+        background: var(--muted);
+        width: 40%;
+        animation: working 1.7s infinite alternate;
+      }
+      @keyframes working {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(220%);
+        }
+      }
+      #toast {
+        position: fixed;
+        bottom: 43px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 650px;
+        max-height: 210px;
+        overflow: auto;
+        background: var(--raised);
+        border: 1px solid var(--muted);
+        border-radius: 8px;
+        padding: 13px 17px;
+        box-shadow: var(--shadow);
+        font-size: 12px;
+        z-index: 15;
+        display: none;
+      }
+      #toast button {
+        float: right;
+        margin-left: 10px;
+      }
+      .log {
+        font:
+          11px ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        padding: 15px;
+        border-radius: 7px;
+        margin-top: 15px;
+        min-height: 220px;
+        line-height: 1.65;
+      }
+      .build-item {
+        border: 1px solid var(--line);
+        padding: 15px;
+        border-radius: 7px;
+        margin: 10px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .build-item img {
+        width: 29px;
+        height: 29px;
+        filter: grayscale(1);
+        border-radius: 6px;
+      }
+      .build-item > div {
+        flex: 1;
+      }
+      .build-item strong {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 3px;
+      }
+      .build-item button {
+        font-size: 11px;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: #0008;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .modal {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 25px;
+        width: 490px;
+        max-width: 90vw;
+        max-height: 85vh;
+        overflow: auto;
+        box-shadow: var(--shadow);
+      }
+      .modal h2 {
+        margin-bottom: 10px;
+      }
+      .modal p {
+        font-size: 12px;
+      }
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 23px;
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        margin: 16px 0;
+        font-size: 12px;
+      }
+      .field input[type="number"] {
+        width: 60px;
+        background: var(--raised);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 5px;
+        padding: 5px;
+      }
+      .field input[type="text"],
+      textarea {
+        background: var(--raised);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 5px;
+        padding: 7px;
+      }
+      .selection {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 14px 0;
+      }
+      .selection label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--muted);
+      }
+      textarea {
+        width: 100%;
+        min-height: 90px;
+        font:
+          12px ui-monospace,
+          monospace;
+      }
+      .setting-heading {
+        font-size: 12px;
+        font-weight: 600;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 8px;
+        margin-top: 21px;
+      }
+      .danger {
+        color: var(--muted);
+      }
+      .update-result {
+        font-size: 11px;
+        margin-top: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 1050px) {
+        #layout {
+          grid-template-columns: 170px minmax(300px, 1fr) 272px;
+        }
+        .content {
+          padding: 20px 18px;
+        }
+        .grid {
+          grid-template-columns: repeat(2, minmax(140px, 1fr));
+        }
+        .app-card {
+          padding: 13px 12px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="chrome">
+      <img src="__MANAGER_ICON__" alt="" /><strong>Craft Library</strong>
+      <div id="drag" aria-label="Drag window"></div>
+      <div class="themes" aria-label="Appearance">
+        <button data-theme="dark" onclick="theme('dark')">Dark</button
+        ><button data-theme="light" onclick="theme('light')">Light</button>
+      </div>
+    </header>
+    <div id="layout">
+      <aside>
+        <div class="workspace">
+          <span data-icon="box"></span> Storytold apps
+        </div>
+        <nav id="nav"></nav>
+        <div class="divider"></div>
+        <div class="label" style="padding-left: 10px">INSTALLED</div>
+        <div id="side-apps"></div>
+        <div class="sidebar-footer">
+          <button onclick="settings()">
+            <span data-icon="settings"></span> Settings</button
+          ><button onclick="send('open-library')">
+            <span data-icon="folder"></span> Open library folder
+          </button>
+        </div>
+      </aside>
+      <main>
+        <div class="main-top">
+          <span class="tab"
+            ><span data-icon="grid"></span
+            ><span id="tab-label">All apps</span></span
+          ><span class="breadcrumb">Official / Storytold</span
+          ><button
+            class="icon-button"
+            title="Refresh installed apps"
+            onclick="send('refresh')"
+          >
+            <span data-icon="refresh"></span>
+          </button>
+        </div>
+        <section class="content" id="content"></section>
+      </main>
+      <section id="inspector"></section>
+    </div>
+    <footer id="status">
+      <span data-icon="check"></span
+      ><span id="status-text">Loading your library…</span>
+      <div class="progress" id="progress" hidden><i></i></div>
+      <button
+        id="cancel"
+        hidden
+        onclick="send('cancel')"
+        style="font-size: 10px; padding: 2px 5px"
+      >
+        Cancel</button
+      ><span id="version"></span
+      ><button
+        onclick="view('activity')"
+        style="font-size: 10px; padding: 2px 5px"
+      >
+        Activity
+      </button>
+    </footer>
+    <div id="toast" role="alert"></div>
+    <div id="modal-root"></div>
+    <script>
+      const catalog = __CATALOG__;
+      let state = {
+          apps: [],
+          builds: {},
+          backups: {},
+          preferences: {},
+          buildPreferences: {},
+          ui: { theme: "dark" },
+          auto: false,
+          autoSource: false,
+        },
+        job = { busy: false, stage: "", detail: "", log: "", outcome: "" };
+      let current = "all",
+        selected = "wordcraft",
+        query = "",
+        category = "all",
+        managerAvailable = false;
+      let lastCatalog = "",
+        lastDetail = "",
+        lastJob = "";
+      const icons = {
+        grid: '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/>',
+        box: '<path d="m12 3 9 5v8l-9 5-9-5V8z"/><path d="m3 8 9 5 9-5M12 13v8M7.5 5.5l9 5"/>',
+        check: '<path d="m5 12 4 4L19 6"/>',
+        download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
+        build:
+          '<path d="m14 6 4-4a7 7 0 0 1-8 9L4 17a2 2 0 0 0 3 3l6-6a7 7 0 0 0 9-8l-4 4z"/>',
+        activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+        folder: '<path d="M3 7V4h6l2 3h10v13H3z"/>',
+        search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+        settings:
+          '<path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3z"/><circle cx="12" cy="12" r="3"/>',
+        external: '<path d="M14 3h7v7m0-7-10 10M10 3H3v18h18v-7"/>',
+        refresh: '<path d="M20 7a9 9 0 1 0 1 8M20 3v5h-5"/>',
+        arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+        code: '<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/>',
+      };
+      function icon(name) {
+        return `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.box}</svg>`;
+      }
+      function decorate() {
+        document
+          .querySelectorAll("[data-icon]")
+          .forEach((e) => (e.innerHTML = icon(e.dataset.icon)));
+      }
+      function esc(v) {
+        return String(v ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+      function send(action, extra = {}) {
+        if (window.ipc)
+          window.ipc.postMessage(
+            JSON.stringify({ action, app: selected, ...extra }),
+          );
+        else console.log(action, extra);
+      }
+      function installed(id) {
+        return state.apps.find((a) => a.name === id && a.path);
+      }
+      function app(id) {
+        return catalog.find((a) => a.id === id);
+      }
+      function toast(text) {
+        const e = document.getElementById("toast");
+        e.textContent = text;
+        const b = document.createElement("button");
+        b.textContent = "×";
+        b.setAttribute("aria-label", "Dismiss message");
+        b.onclick = () => (e.style.display = "none");
+        e.prepend(b);
+        e.style.display = "block";
+      }
+      function theme(value, persist = true) {
+        document.documentElement.dataset.theme = value;
+        document
+          .querySelectorAll(".themes [data-theme]")
+          .forEach((e) =>
+            e.classList.toggle("active", e.dataset.theme === value),
+          );
+        if (persist) send("theme", { theme: value });
+      }
+      function view(value) {
+        current = value;
+        query = "";
+        category = "all";
+        lastCatalog = "";
+        render();
+      }
+      function choose(id) {
+        selected = id;
+        lastDetail = "";
+        render();
+      }
+      function disabled() {
+        return job.busy ? " disabled" : "";
+      }
+      function nav() {
+        document.getElementById("nav").innerHTML = [
+          ["all", "grid", "All apps", catalog.length],
+          [
+            "installed",
+            "box",
+            "My apps",
+            state.apps.filter((a) => a.path).length,
+          ],
+          ["builds", "build", "Builds", Object.keys(state.builds).length],
+          ["activity", "activity", "Activity", ""],
+        ]
+          .map(
+            ([id, sym, label, count]) =>
+              `<button class="${current === id ? "active" : ""}" onclick="view('${id}')">${icon(sym)}${label}<span class="count">${count}</span></button>`,
+          )
+          .join("");
+        document.getElementById("side-apps").innerHTML =
+          catalog
+            .filter((a) => installed(a.id))
+            .map(
+              (a) =>
+                `<button class="side-app ${selected === a.id ? "active" : ""}" onclick="choose('${a.id}')"><img src="${a.icon}" alt="">${a.name}</button>`,
+            )
+            .join("") ||
+          '<p class="tiny" style="padding:10px">Your installed apps appear here.</p>';
+      }
+      function render() {
+        nav();
+        document.getElementById("tab-label").textContent = {
+          all: "All apps",
+          installed: "My apps",
+          builds: "Builds",
+          activity: "Activity",
+        }[current];
+        let key = JSON.stringify([
+          current,
+          state.apps,
+          state.builds,
+          job.busy,
+          selected,
+        ]);
+        if (key !== lastCatalog) {
+          lastCatalog = key;
+          renderContent();
+        }
+        renderInspector();
+        decorate();
+        document.getElementById("version").textContent =
+          `v${state.version || "0.1.0"}`;
+        document.getElementById("status-text").textContent = job.stage
+          ? job.stage + (job.detail ? " · " + job.detail : "")
+          : "All apps are fetched from official Storytold repositories";
+        document.getElementById("progress").hidden = !job.busy;
+        document.getElementById("cancel").hidden = !job.busy;
+      }
+      function renderContent() {
+        let e = document.getElementById("content");
+        if (current === "activity") {
+          e.innerHTML =
+            '<h1>Activity</h1><p>Downloads, source builds and installations.</p><div class="detail-buttons"><button class="secondary" onclick="send(\'open-log\')">Open log file</button></div><pre class="log" id="log"></pre>';
+          document.getElementById("log").textContent =
+            job.log || "No operation has run in this session.";
+          return;
+        }
+        if (current === "builds") {
+          e.innerHTML =
+            "<h1>Builds</h1><p>Native apps built from official source.</p>" +
+            catalog
+              .filter((a) => state.builds[a.id])
+              .map(
+                (a) =>
+                  `<div class="build-item"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><span class="tiny">${esc(state.builds[a.id].version || "Local source build")} · ${esc((state.builds[a.id].commit || "").slice(0, 10))}</span></div><button class="secondary" onclick="choose('${a.id}');send('open-build')">Folder</button><button class="primary"${disabled()} onclick="choose('${a.id}');confirmAction('install-build')">Install</button></div>`,
+              )
+              .join("");
+          if (!Object.keys(state.builds).length)
+            e.innerHTML +=
+              '<div class="empty">Select an app and open Source build to create your first build.</div>';
+          return;
+        }
+        e.innerHTML = `<h1>${current === "installed" ? "My apps" : "Your creative toolkit"}</h1><p>${current === "installed" ? "Installed apps, ready when you are." : "14 independent tools. One place to keep them up to date."}</p><div class="filters"><div class="search">${icon("search")}<input type="search" id="search" aria-label="Search apps" placeholder="Search apps…" value="${esc(query)}"></div><select id="category" aria-label="Filter by category"><option value="all">All categories</option>${[...new Set(catalog.map((a) => a.category))].map((c) => `<option${category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div><div class="section-title"><span id="result-count"></span><span>Official Storytold repositories</span></div><div class="grid" id="grid"></div>`;
+        document.getElementById("search").oninput = (e) => {
+          query = e.target.value;
+          renderGrid();
+        };
+        document.getElementById("category").onchange = (e) => {
+          category = e.target.value;
+          renderGrid();
+        };
+        renderGrid();
+      }
+      function renderGrid() {
+        const visible = catalog.filter(
+          (a) =>
+            (current !== "installed" || installed(a.id)) &&
+            (!query ||
+              `${a.name} ${a.description}`
+                .toLowerCase()
+                .includes(query.toLowerCase())) &&
+            (category === "all" || a.category === category),
+        );
+        document.getElementById("result-count").textContent =
+          `${visible.length} ${visible.length === 1 ? "app" : "apps"}`;
+        document.getElementById("grid").innerHTML =
+          visible
+            .map((a) => {
+              const i = installed(a.id);
+              return `<button class="app-card ${selected === a.id ? "selected" : ""}" aria-pressed="${selected === a.id}" onclick="choose('${a.id}')"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div></div><div class="description">${a.description}</div><div class="card-bottom"><span>${i ? `<span class="status-dot"></span>Installed · ${esc(i.version)}` : "Available"}${a.id === "artcraftx" ? " · Experimental" : ""}</span>${icon("arrow")}</div></button>`;
+            })
+            .join("") || '<div class="empty">No apps match your search.</div>';
+      }
+      function renderInspector() {
+        const a = app(selected),
+          i = installed(selected),
+          build = state.builds[selected],
+          backs = state.backups[selected] || [];
+        const key = JSON.stringify([selected, i, build, backs, job.busy]);
+        if (key === lastDetail) return;
+        lastDetail = key;
+        document.getElementById("inspector").innerHTML =
+          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row"><button class="primary"${disabled()} onclick="confirmAction('install-latest')">${i ? "Update to latest" : "Install latest"}</button>${i ? `<button class="secondary"${disabled()} onclick="send('launch')">Open</button>` : ""}</div><p class="install-note">Official Mac release, or a source build when no Mac release is available.</p><div class="info-row"><span>Status</span><span>${i ? "Installed" : "Not installed"}</span></div>${i ? `<div class="info-row"><span>Version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div><div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Build the latest official source into a native .app. Your archive repositories are never used.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button><button class="secondary"${disabled()} onclick="send('check-release')">Check release</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">A previous version is saved when you update an installed app.</p>'}</details></div><div class="right-bottom">${icon("check")}Official source · Verified bundles</div>`;
+      }
+      function modal(title, body, actions) {
+        document.getElementById("modal-root").innerHTML =
+          `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><h2>${esc(title)}</h2>${body}<div class="modal-actions"><button class="secondary" onclick="closeModal()">Cancel</button>${actions}</div></section></div>`;
+        decorate();
+        const first = document.querySelector(".modal button");
+        if (first) first.focus();
+      }
+      function closeModal() {
+        document.getElementById("modal-root").innerHTML = "";
+      }
+      function confirmAction(action, index) {
+        const backup = (state.backups[selected] || [])[index];
+        const backupSelection = JSON.stringify({backupName: backup?.name, backupSource: backup?.source}).replaceAll('"', '&quot;');
+        const a = app(selected);
+        const descriptions = {
+          "install-latest":
+            "Download and verify the official Mac release. If none exists, set up the required tools and build the latest official source. The current app is backed up according to your settings.",
+          "install-build":
+            "Install the latest completed local build into Applications. Close the app before continuing.",
+          uninstall:
+            "Remove the installed app bundle. Your documents and app profile are kept.",
+          restore:
+            "Replace the installed app with this verified backup. The displaced app is also backed up.",
+          "delete-backup":
+            "Permanently remove this selected backup from the manager’s library.",
+        };
+        modal(
+          `${{ "install-latest": "Install latest", "install-build": "Install build", uninstall: "Uninstall", restore: "Restore backup", "delete-backup": "Delete backup" }[action]} — ${a.name}`,
+          `<p>${descriptions[action]}</p>`,
+          `<button class="primary" onclick="send('${action}',${backupSelection});closeModal();view('activity')">Continue</button>`,
+        );
+      }
+      function about() {
+        modal("About Craft Library", `<div style="text-align:center;padding:24px"><img src="__MANAGER_ICON__" alt="Craft Library icon" style="width:96px;height:96px;border-radius:22px"><h2>Craft Library</h2><p>Version ${esc(state.version || "0.1.0")}</p><p>Henrik Øgård</p></div>`, "");
+      }
+      function settings() {
+        const p = state.preferences,
+          b = state.buildPreferences;
+        const checkbox = (id, label, checked) =>
+          `<label class="field">${label}<input id="${id}" type="checkbox"${checked ? " checked" : ""}></label>`;
+        modal(
+          "Settings",
+          `<div class="setting-heading">Installation & backups</div><label class="field">Install location<select id="format"><option value="installer"${p.releaseFormat === "installer" ? " selected" : ""}>Applications</option><option value="portable"${p.releaseFormat === "portable" ? " selected" : ""}>Library folder</option></select></label>${checkbox("app-backups", "Keep previous app versions", p.keepAppBackups)}${checkbox("source-backups", "Keep previous source archives", p.keepSourceBackups)}<label class="field">Previous versions to keep<input type="number" id="retention" min="1" max="10" value="${p.backupVersions || 2}"></label><div class="setting-heading">Builds</div>${checkbox("delete-cache", "Delete cache after a successful build", b.deleteCacheAfterSuccess)}${checkbox("delete-workspace", "Delete extracted source after success", b.deleteWorkspaceAfterSuccess)}<div class="setting-heading">Update checks</div>${checkbox("startup-apps", "Check installed apps on startup", p.checkInstalledAppsOnStartup)}${checkbox("sparkle-checks", "Check manager updates automatically", state.sparkle?.checks)}${checkbox("sparkle-downloads", "Download and install manager updates automatically", state.sparkle?.downloads)}${checkbox("hourly-apps", "Check app releases hourly", state.auto)}${checkbox("hourly-sources", "Check sources hourly", state.autoSource)}<details><summary>Apps included in scheduled checks</summary><div class="selection">${catalog.map((a) => `<label><input class="selected-app" type="checkbox" value="${a.id}"${(p.selectedApps || []).includes(a.id) ? " checked" : ""}>${a.name}</label>`).join("")}</div><details><summary>Sources included in checks</summary><div class="selection">${catalog.map((a) => `<label><input class="selected-source" type="checkbox" value="${a.id}"${(p.selectedSources || []).includes(a.id) ? " checked" : ""}>${a.name}</label>`).join("")}</div></details></details><div class="setting-heading">Manager</div><p class="tiny">Henrik Øgård’s fork · v${state.version || "0.1.0"}</p><div class="detail-buttons"><button class="secondary" onclick="send('manager-check')">Check for updates</button><button class="secondary" onclick="send('fork')">View fork</button><button class="secondary" onclick="about()">About Craft Library</button><button class="secondary"${disabled()} onclick="confirmSelected()">Install selected apps</button><button class="quiet"${disabled()} onclick="send('fetch-sources');closeModal();view('activity')">Fetch selected sources</button></div><div id="manager-result" class="update-result"></div>`,
+          `<button class="primary" onclick="saveSettings()">Save settings</button>`,
+        );
+      }
+      function saveSettings() {
+        const checked = (id) => document.getElementById(id).checked;
+        const selection = [
+          ...document.querySelectorAll(".selected-app:checked"),
+        ].map((e) => e.value);
+        send("settings", {
+          preferences: {
+            ...state.preferences,
+            releaseFormat: document.getElementById("format").value,
+            keepAppBackups: checked("app-backups"),
+            keepSourceBackups: checked("source-backups"),
+            backupVersions: Number(document.getElementById("retention").value),
+            checkInstalledAppsOnStartup: checked("startup-apps"),
+            selectedApps: selection,
+            selectedSources: [...document.querySelectorAll(".selected-source:checked")].map((e) => e.value),
+          },
+          buildPreferences: {
+            ...state.buildPreferences,
+            deleteCacheAfterSuccess: checked("delete-cache"),
+            deleteWorkspaceAfterSuccess: checked("delete-workspace"),
+          },
+          sparkleChecks: checked("sparkle-checks"),
+          sparkleDownloads: checked("sparkle-downloads"),
+          auto: checked("hourly-apps"),
+          autoSource: checked("hourly-sources"),
+        });
+        closeModal();
+      }
+      function confirmSelected() {
+        modal(
+          "Install selected apps",
+          `<p>Install or update ${(state.preferences.selectedApps || []).length} selected apps using official Mac releases, with source builds when needed.</p>`,
+          `<button class="primary" onclick="send('install-selected');closeModal();view('activity')">Continue</button>`,
+        );
+      }
+      window.receive = function (event) {
+        if (event.type === "snapshot") {
+          state = event.data;
+          theme(state.ui.theme, false);
+          lastCatalog = "";
+          render();
+        } else if (event.type === "job") {
+          const previous = job;
+          job = event.data;
+          if (previous.busy && !job.busy && job.stage === "Failed")
+            toast(job.outcome || job.detail);
+          render();
+          if (current === "activity") {
+            const e = document.getElementById("log");
+            if (e && lastJob !== job.log) {
+              e.textContent = job.log || "Ready.";
+              e.scrollTop = e.scrollHeight;
+              lastJob = job.log;
+            }
+          }
+        } else if (event.type === "feedback") toast(event.message);
+        else if (event.type === "launch-settings") {
+          modal(
+            "Launch settings",
+            `<p>One argument per line. Leave empty to use the default launch options.</p><textarea id="launch-arguments">${esc(event.settings.arguments.join("\n"))}</textarea>`,
+            `<button class="primary" onclick="send('save-launch-settings',{arguments:document.getElementById('launch-arguments').value});closeModal()">Save</button>`,
+          );
+        }
+      };
+      document.getElementById("drag").onmousedown = (e) => {
+        if (e.button === 0) send("drag");
+      };
+      document.getElementById("drag").ondblclick = () => send("maximize");
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeModal();
+      });
+      theme("dark", false);
+      render();
+      send("ready");
+    </script>
+  </body>
+</html>

@@ -1,0 +1,586 @@
+use anyhow::{bail, Result};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+pub const MANAGER_ARCH: &str = if cfg!(target_arch = "aarch64") {
+    "arm64"
+} else {
+    "x64"
+};
+
+pub const APPS: [&str; 14] = [
+    "designcraft",
+    "effectcraft",
+    "filmcraft",
+    "lightcraft",
+    "photocraft",
+    "printcraft",
+    "vectorcraft",
+    "wordcraft",
+    "gridcraft",
+    "deckcraft",
+    "cadcraft",
+    "soundcraft",
+    "artcraft",
+    "artcraftx",
+];
+pub const SOURCES: [&str; 14] = [
+    "designcraft",
+    "effectcraft",
+    "filmcraft",
+    "lightcraft",
+    "photocraft",
+    "printcraft",
+    "vectorcraft",
+    "wordcraft",
+    "gridcraft",
+    "deckcraft",
+    "cadcraft",
+    "soundcraft",
+    "artcraft",
+    "artcraftx",
+];
+pub fn title(name: &str) -> String {
+    if name == "cadcraft" {
+        return "CADCraft".into();
+    }
+    if name == "printcraft" {
+        return "PDFCraft".into();
+    }
+    if name == "artcraftx" {
+        return "ArtCraft X".into();
+    }
+    format!(
+        "{}{}",
+        name[..1].to_uppercase(),
+        name[1..].replace("craft", "Craft")
+    )
+}
+/// Upstream repository names can differ from the published binary names.
+pub fn repository(name: &str) -> &str {
+    if name == "printcraft" {
+        "pdfcraft"
+    } else {
+        name
+    }
+}
+pub fn valid_app(name: &str) -> Result<()> {
+    if !SOURCES.contains(&name) {
+        bail!("Unknown app: {name}");
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Preferences {
+    pub keep_app_backups: bool,
+    pub keep_source_backups: bool,
+    pub compress_backups: bool,
+    pub compress_source_backups: bool,
+    pub notify_updates: bool,
+    pub backup_versions: usize,
+    pub release_format: String,
+    pub architecture: String,
+    pub selected_apps: Vec<String>,
+    pub selected_sources: Vec<String>,
+    pub app_order: Vec<String>,
+    #[serde(alias = "checkUpdaterOnStartup")]
+    pub check_manager_on_startup: bool,
+    pub check_installed_apps_on_startup: bool,
+}
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            keep_app_backups: true,
+            keep_source_backups: true,
+            compress_backups: true,
+            compress_source_backups: true,
+            notify_updates: true,
+            backup_versions: 1,
+            release_format: "installer".into(),
+            architecture: MANAGER_ARCH.into(),
+            selected_apps: APPS.iter().map(|s| s.to_string()).collect(),
+            selected_sources: SOURCES.iter().map(|s| s.to_string()).collect(),
+            app_order: APPS.iter().map(|s| s.to_string()).collect(),
+            check_manager_on_startup: false,
+            check_installed_apps_on_startup: false,
+        }
+    }
+}
+impl Preferences {
+    pub fn validate(&mut self) -> Result<()> {
+        if !["portable", "installer"].contains(&self.release_format.as_str())
+            || !["x64", "arm64"].contains(&self.architecture.as_str())
+        {
+            bail!("Unsupported release format or architecture");
+        }
+        self.backup_versions = self.backup_versions.clamp(1, 10);
+        self.selected_apps.retain(|s| APPS.contains(&s.as_str()));
+        self.selected_apps.sort();
+        self.selected_apps.dedup();
+        self.selected_sources
+            .retain(|s| SOURCES.contains(&s.as_str()));
+        self.selected_sources.sort();
+        self.selected_sources.dedup();
+        let mut seen = std::collections::BTreeSet::new();
+        self.app_order
+            .retain(|s| APPS.contains(&s.as_str()) && seen.insert(s.clone()));
+        for name in APPS {
+            if seen.insert(name.to_owned()) {
+                self.app_order.push(name.to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BuilderPreferences {
+    pub delete_cache_after_success: bool,
+    pub delete_workspace_after_success: bool,
+    #[serde(rename = "logSizeMB")]
+    pub log_size_mb: u64,
+    pub log_archives: usize,
+}
+impl Default for BuilderPreferences {
+    fn default() -> Self {
+        Self {
+            delete_cache_after_success: false,
+            delete_workspace_after_success: true,
+            log_size_mb: 10,
+            log_archives: 2,
+        }
+    }
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Installed {
+    pub name: String,
+    pub version: String,
+    pub path: String,
+    #[serde(default = "default_arch")]
+    pub architecture: String,
+    #[serde(default)]
+    pub install_kind: String,
+    #[serde(default)]
+    pub product_code: String,
+    #[serde(default)]
+    pub source_commit: String,
+    #[serde(default)]
+    pub install_origin: String,
+}
+fn default_arch() -> String {
+    MANAGER_ARCH.into()
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Config {
+    pub apps_root: String,
+    pub apps: Vec<Installed>,
+    #[serde(default)]
+    pub installations: Vec<Installed>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub sha: String,
+    pub branch: String,
+    pub repository: String,
+    pub archive_sha256: String,
+    pub downloaded_at: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Asset {
+    pub name: String,
+    pub size: u64,
+    pub browser_download_url: String,
+    #[serde(default)]
+    pub digest: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Release {
+    pub tag_name: String,
+    pub draft: bool,
+    pub prerelease: bool,
+    pub assets: Vec<Asset>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildInfo {
+    pub app: String,
+    pub commit: String,
+    pub source_branch: String,
+    pub built_at: String,
+    pub profile: String,
+    pub log: String,
+}
+#[derive(Clone)]
+pub struct Paths {
+    pub root: PathBuf,
+    pub tools: PathBuf,
+}
+impl Paths {
+    pub fn new(root: PathBuf, tools: Option<PathBuf>) -> Self {
+        let tools = tools.unwrap_or_else(|| root.join("workspace/tools"));
+        Self { root, tools }
+    }
+    pub fn at(&self, name: impl AsRef<Path>) -> PathBuf {
+        self.root.join(name)
+    }
+    pub fn config(&self) -> Result<Config> {
+        self.config_with_detector(crate::installers::detect)
+    }
+    fn config_with_detector(
+        &self,
+        detect: impl Fn(&str) -> Result<Option<Installed>>,
+    ) -> Result<Config> {
+        if self.at("settings.json").exists() {
+            let config: Config = crate::files::read_json(&self.at("settings.json"))?;
+            if !Path::new(&config.apps_root).eq(&self.root) {
+                bail!("settings.json points to a different data folder. Select that folder in Settings.");
+            }
+            return self.refresh_config(config, &detect);
+        }
+        let mut apps = Vec::new();
+        for name in APPS {
+            let mut found: Vec<_> = std::fs::read_dir(self.at("releases"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| {
+                    e.path().is_dir()
+                        && e.file_name()
+                            .to_string_lossy()
+                            .starts_with(&format!("{name}-"))
+                })
+                .filter_map(|e| {
+                    let label = e.file_name().to_string_lossy().into_owned();
+                    let version = label
+                        .strip_prefix(&format!("{name}-"))?
+                        .split("-macos-")
+                        .next()?
+                        .to_string();
+                    crate::updates::version(&version)
+                        .ok()
+                        .map(|v| (v, version, e.path()))
+                })
+                .collect();
+            found.sort_by_key(|v| v.0);
+            let (version, path) = found
+                .pop()
+                .map(|(_, v, p)| (v, p.to_string_lossy().into_owned()))
+                .unwrap_or_default();
+            let direct = self.at(format!("releases/{name}"));
+            apps.push(Installed {
+                name: name.into(),
+                version,
+                path: if path.is_empty() && installed_executable(&direct, name).is_some() {
+                    direct.to_string_lossy().into_owned()
+                } else {
+                    path
+                },
+                architecture: default_arch(),
+                install_kind: String::new(),
+                product_code: String::new(),
+                ..Default::default()
+            });
+        }
+        self.refresh_config(
+            Config {
+                apps_root: self.root.to_string_lossy().into_owned(),
+                apps,
+                installations: Vec::new(),
+            },
+            &detect,
+        )
+    }
+    fn refresh_config(
+        &self,
+        mut config: Config,
+        detect: &impl Fn(&str) -> Result<Option<Installed>>,
+    ) -> Result<Config> {
+        let installer = self.preferences()?.release_format == "installer";
+        // Add catalog entries when upgrading an existing library without
+        // changing saved selections, installations, or the user's app order.
+        for name in APPS {
+            if !config.apps.iter().any(|app| app.name == name) {
+                config.apps.push(Installed {
+                    name: name.into(),
+                    architecture: default_arch(),
+                    ..Default::default()
+                });
+            }
+        }
+        for app in &config.apps {
+            if !app.path.is_empty()
+                && !config.installations.iter().any(|a| {
+                    a.name == app.name
+                        && (a.install_kind == "installer") == (app.install_kind == "installer")
+                })
+            {
+                config.installations.push(app.clone());
+            }
+        }
+        for app in &mut config.apps {
+            if installer {
+                let detected = detect(&app.name)?;
+                config
+                    .installations
+                    .retain(|a| !(a.name == app.name && a.install_kind == "installer"));
+                if let Some(record) = detected {
+                    config.installations.push(record.clone());
+                    *app = record;
+                } else {
+                    app.path.clear();
+                    app.version.clear();
+                    app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
+                    app.install_kind = "installer".into();
+                }
+            } else if let Some(record) = config.installations.iter().find(|a| {
+                a.name == app.name
+                    && a.install_kind != "installer"
+                    && installed_executable(Path::new(&a.path), &a.name).is_some()
+            }) {
+                *app = record.clone();
+            } else {
+                let root = self.at(format!("releases/{}", app.name));
+                if let Some(executable) = installed_executable(&root, &app.name) {
+                    app.path = root.display().to_string();
+                    app.version = crate::platform::executable_version(&executable)
+                        .unwrap_or_else(|| "0.0.0".into());
+                    app.install_kind = "portable".into();
+                    app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
+                    config.installations.push(app.clone());
+                } else {
+                    app.path.clear();
+                    app.version.clear();
+                    app.install_kind = "portable".into();
+                    app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
+                }
+            }
+        }
+        Ok(config)
+    }
+    pub fn save_config(&self, config: &Config) -> Result<()> {
+        let mut config = config.clone();
+        for app in &config.apps {
+            let installer = app.install_kind == "installer";
+            config
+                .installations
+                .retain(|a| !(a.name == app.name && (a.install_kind == "installer") == installer));
+            if !app.path.is_empty() {
+                config.installations.push(app.clone());
+            }
+        }
+        crate::files::write_json(&self.at("settings.json"), &config)
+    }
+    pub fn preferences(&self) -> Result<Preferences> {
+        let target = self.at("manager-settings.json");
+        let legacy = self.at("updater-settings.json");
+        let migrate = !target.exists() && legacy.exists();
+        let mut p =
+            crate::files::read_or_default::<Preferences>(if migrate { &legacy } else { &target })?;
+        p.validate()?;
+        if migrate {
+            crate::files::write_json(&target, &p)?;
+            std::fs::remove_file(legacy)?;
+        }
+        Ok(p)
+    }
+    pub fn builder_preferences(&self) -> Result<BuilderPreferences> {
+        let mut p =
+            crate::files::read_or_default::<BuilderPreferences>(&self.at("builder-settings.json"))?;
+        p.log_size_mb = p.log_size_mb.clamp(1, 100);
+        p.log_archives = p.log_archives.min(5);
+        Ok(p)
+    }
+}
+
+/// The native app bundle that is launched or installed.
+pub fn executable_name(app: &str) -> String {
+    match app {
+        "artcraftx" => "ArtCraftX.app".into(),
+        "printcraft" | "pdfcraft" => "PdfCraft.app".into(),
+        "cadcraft" => "CADCraft.app".into(),
+        _ => format!(
+            "{}{}.app",
+            app[..1].to_uppercase(),
+            app[1..].replace("craft", "Craft")
+        ),
+    }
+}
+pub fn build_executable_name(app: &str) -> String {
+    executable_name(app)
+}
+pub fn is_executable(path: &Path) -> bool {
+    path.is_dir()
+}
+pub fn executable_names(app: &str) -> Vec<String> {
+    let mut names = vec![executable_name(app)];
+    if app == "printcraft" {
+        names.push("PrintCraft.app".into());
+    }
+    let renamed = repository(app);
+    if renamed != app {
+        let alternate = executable_name(renamed);
+        if !names.contains(&alternate) {
+            names.push(alternate);
+        }
+    }
+    names.dedup();
+    names
+}
+pub fn installed_executable(folder: &Path, app: &str) -> Option<PathBuf> {
+    executable_names(app)
+        .into_iter()
+        .map(|name| folder.join(name))
+        .find(|path| is_executable(path))
+}
+pub fn release_os() -> &'static str {
+    "macos"
+}
+pub fn release_arch(_: &str) -> &'static str {
+    "universal"
+}
+
+#[cfg(test)]
+mod detection_tests {
+    use super::*;
+    #[test]
+    fn existing_libraries_gain_new_apps_without_resetting_preferences() {
+        let root = std::env::temp_dir().join(format!("craft-catalog-{}", uuid::Uuid::new_v4()));
+        let paths = Paths::new(root.clone(), None);
+        let prefs = Preferences {
+            release_format: "installer".into(),
+            selected_apps: vec!["filmcraft".into()],
+            selected_sources: vec!["filmcraft".into()],
+            app_order: vec!["filmcraft".into()],
+            ..Default::default()
+        };
+        crate::files::write_json(&paths.at("manager-settings.json"), &prefs).unwrap();
+        let config = Config {
+            apps_root: root.display().to_string(),
+            apps: vec![Installed {
+                name: "filmcraft".into(),
+                ..Default::default()
+            }],
+            installations: vec![],
+        };
+        crate::files::write_json(&paths.at("settings.json"), &config).unwrap();
+        let detect = |name: &str| {
+            Ok((name == "wordcraft").then(|| Installed {
+                name: name.into(),
+                path: "system/WordCraft".into(),
+                version: "0.3.0".into(),
+                install_kind: "installer".into(),
+                ..Default::default()
+            }))
+        };
+        let migrated = paths.config_with_detector(detect).unwrap();
+        assert_eq!(migrated.apps.len(), APPS.len());
+        assert_eq!(
+            migrated
+                .apps
+                .iter()
+                .find(|a| a.name == "wordcraft")
+                .unwrap()
+                .version,
+            "0.3.0"
+        );
+        paths.save_config(&migrated).unwrap();
+        assert_eq!(
+            paths.config_with_detector(detect).unwrap().apps.len(),
+            APPS.len()
+        );
+        let preserved = paths.preferences().unwrap();
+        assert_eq!(preserved.selected_apps, ["filmcraft"]);
+        assert_eq!(preserved.selected_sources, ["filmcraft"]);
+        assert_eq!(preserved.app_order[0], "filmcraft");
+        assert_eq!(preserved.app_order.len(), APPS.len());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn first_launch_detects_preexisting_installers_and_keeps_portable_inventory() {
+        let root =
+            std::env::temp_dir().join(format!("craft-first-launch-{}", uuid::Uuid::new_v4()));
+        let paths = Paths::new(root.clone(), None);
+        let portable = paths.at("releases/photocraft");
+        std::fs::create_dir_all(&portable).unwrap();
+        std::fs::create_dir_all(portable.join(executable_name("photocraft"))).unwrap();
+        crate::files::write_json(
+            &paths.at("manager-settings.json"),
+            &Preferences {
+                release_format: "installer".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let detect = |name: &str| -> Result<Option<Installed>> {
+            Ok(["photocraft", "printcraft"]
+                .contains(&name)
+                .then(|| Installed {
+                    name: name.into(),
+                    path: root.join("system").join(name).display().to_string(),
+                    version: "0.2.1".into(),
+                    architecture: "x64".into(),
+                    install_kind: "installer".into(),
+                    product_code: "existing-product".into(),
+                    ..Default::default()
+                }))
+        };
+        assert!(!paths.at("settings.json").exists());
+        let first = paths.config_with_detector(detect).unwrap();
+        for name in ["photocraft", "printcraft"] {
+            let app = first.apps.iter().find(|a| a.name == name).unwrap();
+            assert_eq!(app.install_kind, "installer");
+            assert_eq!(app.version, "0.2.1");
+            assert!(first
+                .installations
+                .iter()
+                .any(|a| a.name == name && a.install_kind == "installer"));
+        }
+        paths.save_config(&first).unwrap();
+        let reopened = paths.config_with_detector(detect).unwrap();
+        assert_eq!(
+            reopened
+                .apps
+                .iter()
+                .find(|a| a.name == "photocraft")
+                .unwrap()
+                .path,
+            first
+                .apps
+                .iter()
+                .find(|a| a.name == "photocraft")
+                .unwrap()
+                .path
+        );
+        crate::files::write_json(
+            &paths.at("manager-settings.json"),
+            &Preferences {
+                release_format: "portable".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let switched = paths
+            .config_with_detector(|_| panic!("Portable mode must not query installer records"))
+            .unwrap();
+        assert_eq!(
+            switched
+                .apps
+                .iter()
+                .find(|a| a.name == "photocraft")
+                .unwrap()
+                .path,
+            portable.display().to_string()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

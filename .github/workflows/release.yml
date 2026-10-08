@@ -1,0 +1,87 @@
+name: Signed macOS release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      CRAFT_MANAGER_REPOSITORY: ${{ github.repository }}
+      CRAFT_RELEASE_TAG: ${{ github.ref_name }}
+      APPSTORE_API_KEY_ID: ${{ vars.APPSTORE_API_KEY_ID }}
+      APPSTORE_API_ISSUER_ID: ${{ vars.APPSTORE_API_ISSUER_ID }}
+      SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+      SPARKLE_FEED_URL: ${{ vars.SPARKLE_FEED_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Validate
+        run: |
+          cargo fmt --check
+          cargo test --locked --all-targets -- --test-threads=1
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Import signing credentials
+        env:
+          CERTIFICATE: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" && -n "$NOTARY_KEY" && -n "$SPARKLE_KEY" && -n "$APPSTORE_API_KEY_ID" && -n "$APPSTORE_API_ISSUER_ID" ]] || { echo 'Missing signing or notarization configuration' >&2; exit 1; }
+          work="$RUNNER_TEMP/craft-signing"
+          mkdir -p "$work"
+          chmod 700 "$work"
+          keychain="$work/release.keychain-db"
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user > "$work/previous-keychains"
+          security list-keychains -d user -s "$keychain" $(tr -d '"' < "$work/previous-keychains")
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$work/certificate.p12"
+          security import "$work/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          rm "$work/certificate.p12"
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+          [[ -n "$identity" ]] || { echo 'No Developer ID Application identity imported' >&2; exit 1; }
+          printf '%s' "$NOTARY_KEY" | base64 --decode > "$work/AuthKey.p8"
+          printf '%s' "$SPARKLE_KEY" > "$work/sparkle-key"
+          chmod 600 "$work/AuthKey.p8" "$work/sparkle-key"
+          echo "CRAFT_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "APPSTORE_API_KEY_FILE=$work/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "SPARKLE_PRIVATE_KEY_FILE=$work/sparkle-key" >> "$GITHUB_ENV"
+      - name: Sign, notarize and generate Sparkle appcast
+        run: ./scripts/release-macos.sh
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$CRAFT_RELEASE_TAG" dist/macos/*.zip dist/macos/appcast.xml dist/macos/SHA256SUMS --verify-tag --title "Craft Library ${CRAFT_RELEASE_TAG#v}" --generate-notes
+      - name: Preserve release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: dist/macos/notarization.json
+          if-no-files-found: ignore
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          work="$RUNNER_TEMP/craft-signing"
+          if [[ -f "$work/previous-keychains" ]]; then security list-keychains -d user -s $(tr -d '"' < "$work/previous-keychains"); fi
+          if [[ -f "$work/release.keychain-db" ]]; then security delete-keychain "$work/release.keychain-db"; fi
+          rm -rf "$work"

@@ -1,0 +1,26 @@
+name: Check macOS
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: cargo fmt --check
+      - run: cargo test --locked --all-targets -- --test-threads=1
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: ./scripts/package-macos.sh
+        env:
+          CRAFT_MANAGER_REPOSITORY: ${{ github.repository }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/macos/*.zip
+          if-no-files-found: error

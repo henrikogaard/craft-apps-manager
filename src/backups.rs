@@ -39,7 +39,7 @@ pub fn finish(
         p.compress_backups
     };
     let mut current = backup.to_path_buf();
-    if compress {
+    if compress && !backup.join("installed-app.json").exists() {
         match compress_backup(paths, backup, source, job) {
             Ok(Some(archive)) => current = archive,
             Ok(None) => {}
@@ -155,6 +155,10 @@ pub fn restore(paths: &Paths, app: &str, backup: &Backup, job: &Job) -> Result<(
         bail!("Not a managed backup for this app");
     }
     files::no_links(&backup.path)?;
+    #[cfg(target_os = "macos")]
+    if !backup.source && backup.path.join("installed-app.json").is_file() {
+        return crate::macos_build::restore(paths, app, &backup.path, job);
+    }
     if !backup.source && paths.preferences()?.release_format != "portable" {
         bail!("Select Portable ZIP in Settings to restore a portable release. MSI installations are not changed.");
     }

@@ -141,6 +141,8 @@ impl Preferences {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct BuilderPreferences {
+    /// Parent folder containing existing app repositories. They are read only.
+    pub local_repositories: String,
     pub delete_cache_after_success: bool,
     pub delete_workspace_after_success: bool,
     #[serde(rename = "logSizeMB")]
@@ -150,7 +152,8 @@ pub struct BuilderPreferences {
 impl Default for BuilderPreferences {
     fn default() -> Self {
         Self {
-            delete_cache_after_success: true,
+            local_repositories: String::new(),
+            delete_cache_after_success: !cfg!(target_os = "macos"),
             delete_workspace_after_success: true,
             log_size_mb: 10,
             log_archives: 2,
@@ -168,6 +171,10 @@ pub struct Installed {
     pub install_kind: String,
     #[serde(default)]
     pub product_code: String,
+    #[serde(default)]
+    pub source_commit: String,
+    #[serde(default)]
+    pub install_origin: String,
 }
 fn default_arch() -> String {
     MANAGER_ARCH.into()
@@ -282,6 +289,7 @@ impl Paths {
                 architecture: default_arch(),
                 install_kind: String::new(),
                 product_code: String::new(),
+                ..Default::default()
             });
         }
         self.refresh_config(
@@ -333,6 +341,8 @@ impl Paths {
                     app.path.clear();
                     app.version.clear();
                     app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
                     app.install_kind = "installer".into();
                 }
             } else if let Some(record) = config.installations.iter().find(|a| {
@@ -349,12 +359,16 @@ impl Paths {
                         .unwrap_or_else(|| "0.0.0".into());
                     app.install_kind = "portable".into();
                     app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
                     config.installations.push(app.clone());
                 } else {
                     app.path.clear();
                     app.version.clear();
                     app.install_kind = "portable".into();
                     app.product_code.clear();
+                    app.source_commit.clear();
+                    app.install_origin.clear();
                 }
             }
         }
@@ -362,8 +376,8 @@ impl Paths {
     }
     pub fn save_config(&self, config: &Config) -> Result<()> {
         let mut config = config.clone();
-        let installer = self.preferences()?.release_format == "installer";
         for app in &config.apps {
+            let installer = app.install_kind == "installer";
             config
                 .installations
                 .retain(|a| !(a.name == app.name && (a.install_kind == "installer") == installer));
@@ -413,8 +427,12 @@ pub fn executable_name(app: &str) -> String {
         app.into()
     }
 }
-/// The bare executable produced by a source build.
+/// Executable or native bundle produced by a source build.
 pub fn build_executable_name(app: &str) -> String {
+    #[cfg(target_os = "macos")]
+    if crate::macos_build::supported(app) {
+        return executable_name(app);
+    }
     if cfg!(target_os = "windows") {
         format!("{app}.exe")
     } else {
@@ -550,6 +568,7 @@ mod detection_tests {
                     architecture: "x64".into(),
                     install_kind: "installer".into(),
                     product_code: "existing-product".into(),
+                    ..Default::default()
                 }))
         };
         assert!(!paths.at("settings.json").exists());

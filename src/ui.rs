@@ -359,6 +359,12 @@ impl App {
             "uninstall-app" => apps::uninstall_with_profile(&paths, &app, delete_profile),
             "sources" => updates::sources(&paths, &paths.preferences()?.selected_sources, &job),
             "build" => builder::build(&paths, &app, latest, &job),
+            #[cfg(target_os = "macos")]
+            "check-source-build" => {
+                craft_apps_manager::macos_build::check_source(&paths, &app, &job)
+            }
+            #[cfg(target_os = "macos")]
+            "install-build" => craft_apps_manager::macos_build::install_build(&paths, &app, &job),
             "setup" => tools::setup(&paths, &app, &job),
             "clear" => backups::clear(&paths),
             "clear-app" => backups::clear_app(&paths, &app),
@@ -397,6 +403,7 @@ impl App {
             ui.heading(if self.builder{"Build maintenance"}else{"Release preferences"});ui.separator();
 egui::ScrollArea::vertical().max_height((ctx.screen_rect().height()-180.0).max(240.0)).show(ui,|ui|{
             if self.builder{
+                #[cfg(target_os = "macos")] { ui.label("Local repository parent folder (optional)"); ui.text_edit_singleline(&mut self.build_draft.local_repositories); ui.small("Existing repositories are read only. Builds use a separate clone of the committed source."); }
                 ui.checkbox(&mut self.build_draft.delete_cache_after_success,"Delete compilation cache after a successful build");ui.checkbox(&mut self.build_draft.delete_workspace_after_success,"Delete extracted source and node_modules after success");
                 ui.horizontal(|ui|{ui.label("Rotate each app log at (MB)");ui.add(egui::DragValue::new(&mut self.build_draft.log_size_mb).range(1..=100));});ui.horizontal(|ui|{ui.label("Older log files to keep");ui.add(egui::DragValue::new(&mut self.build_draft.log_archives).range(0..=5));});
                 ui.small("Cancelled and failed builds keep their cache. Completed builds and tools are retained.");if ui.button("Clean temporary files now...").clicked(){self.confirm_clean=true;}
@@ -404,7 +411,7 @@ egui::ScrollArea::vertical().max_height((ctx.screen_rect().height()-180.0).max(2
                 ui.horizontal(|ui|{ui.label("Release format");egui::ComboBox::from_id_salt("format").selected_text(if self.settings_draft.release_format=="portable"{if cfg!(target_os = "linux") {"AppImage"} else if cfg!(target_os = "macos") {"Portable app"} else {"Portable ZIP"}}else{"Installer"}).show_ui(ui,|ui|{ui.selectable_value(&mut self.settings_draft.release_format,"portable".into(),if cfg!(target_os = "linux") {"AppImage"} else if cfg!(target_os = "macos") {"Portable app"} else {"Portable ZIP"});ui.selectable_value(&mut self.settings_draft.release_format,"installer".into(),"Installer");});});
                 ui.horizontal(|ui|{ui.label("Architecture");egui::ComboBox::from_id_salt("arch").selected_text(&self.settings_draft.architecture).show_ui(ui,|ui|{for (value,label) in [("x64","64-bit (x64)"),("x86","32-bit (x86)"),("arm64","ARM64")]{ui.selectable_value(&mut self.settings_draft.architecture,value.into(),label);}});});
                 ui.horizontal(|ui|{if ui.button("Choose release apps...").clicked(){self.source_selection=false;self.selection_draft=self.settings_draft.selected_apps.clone();self.selection=true;}ui.label(format!("{} of {} apps selected",self.settings_draft.selected_apps.len(),APPS.len()));});ui.horizontal(|ui|{if ui.button("Choose source apps...").clicked(){self.source_selection=true;self.selection_draft=self.settings_draft.selected_sources.clone();self.selection=true;}ui.label(format!("{} of {} sources selected",self.settings_draft.selected_sources.len(),SOURCES.len()));});
-                ui.separator();ui.checkbox(&mut self.settings_draft.keep_app_backups,"Create app backups (portable releases only)");ui.checkbox(&mut self.settings_draft.keep_source_backups,"Create source backups");ui.checkbox(&mut self.settings_draft.compress_backups,"Compress portable app backups (7-Zip Ultra / LZMA2)");ui.checkbox(&mut self.settings_draft.compress_source_backups,"Recompress source backups (7-Zip Ultra / LZMA2)");ui.checkbox(&mut self.settings_draft.notify_updates,"Notify me when app or source updates are available");ui.checkbox(&mut self.settings_draft.check_installed_apps_on_startup,"Check installed apps for updates on startup").on_hover_text("Checks installed apps in the selected release format. Reports availability only; downloads and installation require confirmation.");ui.checkbox(&mut self.settings_draft.check_manager_on_startup,"Check for a new version of this program on startup").on_hover_text("Checks for a new Craft Apps Manager release. Downloads require your confirmation.");
+                ui.separator();ui.checkbox(&mut self.settings_draft.keep_app_backups,if cfg!(target_os = "macos") { "Create app backups (portable and installed apps)" } else { "Create app backups (portable releases only)" });ui.checkbox(&mut self.settings_draft.keep_source_backups,"Create source backups");ui.checkbox(&mut self.settings_draft.compress_backups,"Compress portable app backups (7-Zip Ultra / LZMA2)");ui.checkbox(&mut self.settings_draft.compress_source_backups,"Recompress source backups (7-Zip Ultra / LZMA2)");ui.checkbox(&mut self.settings_draft.notify_updates,"Notify me when app or source updates are available");ui.checkbox(&mut self.settings_draft.check_installed_apps_on_startup,"Check installed apps for updates on startup").on_hover_text("Checks installed apps in the selected release format. Reports availability only; downloads and installation require confirmation.");ui.checkbox(&mut self.settings_draft.check_manager_on_startup,"Check for a new version of this program on startup").on_hover_text("Checks for a new Craft Apps Manager release. Downloads require your confirmation.");
                 ui.horizontal(|ui|{ui.label("Previous versions to keep per app / source");ui.add(egui::DragValue::new(&mut self.settings_draft.backup_versions).range(1..=10));});
                 ui.small(if cfg!(target_os = "linux") {"AppImage updates retain a rollback copy until successful. System packages require administrator authorization."} else if cfg!(target_os = "macos") {"A temporary rollback copy is kept until the update succeeds. Installer mode copies the signed app into Applications; portable mode keeps it in the library."} else {"A temporary rollback copy is kept until the update succeeds. Installer mode downloads and opens the Windows installer wizard."});if ui.button("Clear backups...").clicked(){self.confirm_clear=true;}
                 if ui.add_enabled(self.manager_receiver.is_none() && self.manager_plan.is_none(), egui::Button::new("Check for updates...")).on_hover_text("Check for a newer Craft Apps Manager release").clicked() { self.check_manager(ctx); }
@@ -650,12 +657,13 @@ egui::ScrollArea::vertical().max_height((ctx.screen_rect().height()-180.0).max(2
                                             .to_string()
                                     })
                                     .unwrap_or_default();
+                                let installed_backup: Option<model::Installed> = files::read_json(&backup.path.join("installed-app.json")).ok();
                                 let label = format!(
                                     "{} · {}\n{} · {}",
                                     if backup.source {
                                         "Source"
                                     } else {
-                                        "Portable release"
+                                        if installed_backup.is_some() { "Installed app" } else { "Portable release" }
                                     },
                                     version,
                                     date,
@@ -667,9 +675,10 @@ egui::ScrollArea::vertical().max_height((ctx.screen_rect().height()-180.0).max(2
                                         "ZIP archive"
                                     }
                                 );
+                                let label = if let Some(record) = installed_backup { format!("{label}\n{} · commit {}", record.install_origin, if record.source_commit.is_empty() { "unknown" } else { &record.source_commit }) } else { label };
                                 if ui
                                     .add_sized(
-                                        [ui.available_width(), 56.0],
+                                        [ui.available_width(), 76.0],
                                         egui::Button::new(label)
                                             .selected(if self.backup_delete_mode {self.backup_delete_selected.contains(&i)}else{self.restore_selected == Some(i)}),
                                     )
@@ -1097,13 +1106,15 @@ impl eframe::App for App {
                         egui::Checkbox::new(&mut self.latest, "Use latest source"),
                     );
                     ui.small(
-                        "Unchecked builds from your local source ZIP without contacting GitHub.",
+                        if cfg!(target_os = "macos") { "Unchecked uses committed local source. Configure repositories in Builder settings." } else { "Unchecked builds from your local source ZIP without contacting GitHub." },
                     );
+                    #[cfg(target_os = "macos")]
+                    if craft_apps_manager::macos_build::supported(&self.app) && ui.add_enabled(!state.busy, egui::Button::new("Check upstream source")).clicked() { self.start("check-source-build"); }
                     ui.add_space(10.0);
                     if ui
                         .add_enabled(
                             !state.busy,
-                            egui::Button::new("Build executable")
+                            egui::Button::new(if cfg!(target_os = "macos") && matches!(self.app.as_str(), "wordcraft" | "gridcraft" | "deckcraft") { "Build app bundle" } else { "Build executable" })
                                 .fill(BLUE)
                                 .min_size(egui::vec2(190.0, 34.0)),
                         )
@@ -1111,6 +1122,8 @@ impl eframe::App for App {
                     {
                         self.start("build")
                     }
+                    #[cfg(target_os = "macos")]
+                    if craft_apps_manager::macos_build::supported(&self.app) && ui.add_enabled(!state.busy && builder::history(&self.paths, &self.app).is_some(), egui::Button::new("Install built app").min_size(egui::vec2(190.0,32.0))).clicked() { self.start("install-build"); }
                     if ui
                         .add_enabled(
                             !state.busy,
@@ -1712,6 +1725,12 @@ impl eframe::App for App {
                             }),
                         );
                         ui.label(format!("Version {} · {}", app.version, app.architecture));
+                        if !app.install_origin.is_empty() {
+                            ui.small(format!("Channel: {}", app.install_origin));
+                        }
+                        if !app.source_commit.is_empty() {
+                            ui.small(format!("Commit: {}", app.source_commit));
+                        }
                         ui.small(if app.install_kind == "installer" {
                             if cfg!(target_os = "linux") {
                                 "Installed Linux package"

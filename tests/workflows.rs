@@ -863,6 +863,7 @@ fn stale_installation_records_do_not_mark_apps_installed() {
         architecture: "x64".into(),
         install_kind: "installer".into(),
         product_code: "{00000000-0000-0000-0000-000000000000}".into(),
+        ..Default::default()
     };
     let config = Config {
         apps_root: f.0.display().to_string(),

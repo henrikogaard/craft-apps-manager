@@ -6,6 +6,12 @@ use std::{fs, path::PathBuf};
 fn main() {
     if let Err(e) = run() {
         let message = format!("{e:#}");
+        #[cfg(target_os = "macos")]
+        let path = std::env::var_os("HOME").map(|home| {
+            PathBuf::from(home)
+                .join("Library/Application Support/Craft Apps Manager/logs/startup.log")
+        });
+        #[cfg(not(target_os = "macos"))]
         let path = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.join("logs/startup.log")));
@@ -13,8 +19,12 @@ fn main() {
             let _ = fs::create_dir_all(path.parent().unwrap());
             let _ = fs::write(path, &message);
         }
+        #[cfg(unix)]
+        eprintln!("{message}");
         if std::env::args().any(|a| {
-            a == "--update"
+            a == "--build-app"
+                || a == "--install-build"
+                || a == "--update"
                 || a == "--update-source"
                 || a == "--background"
                 || a == "--check-app-updates"
@@ -22,8 +32,6 @@ fn main() {
         }) {
             std::process::exit(1);
         }
-        #[cfg(unix)]
-        eprintln!("{message}");
         #[cfg(target_os = "windows")]
         unsafe {
             let text = platform::wide(&message);
@@ -75,6 +83,28 @@ fn run() -> Result<()> {
     let paths = Paths::new(root, arg("--tools").or(saved.tools));
     #[cfg(target_os = "linux")]
     craft_apps_manager::apps::repair_linux_shortcuts(&paths)?;
+    if let Some(i) = args
+        .iter()
+        .position(|s| s == "--build-app" || s == "--install-build")
+    {
+        let app = args.get(i + 1).context("Missing app name")?;
+        craft_apps_manager::model::valid_app(app)?;
+        let job = Job::new(
+            paths.at(format!("logs/{app}.log")),
+            &paths.builder_preferences()?,
+        );
+        if args[i] == "--build-app" {
+            return builder::build(&paths, app, args.iter().any(|a| a == "--latest"), &job);
+        }
+        #[cfg(target_os = "macos")]
+        if craft_apps_manager::macos_build::supported(app) {
+            return craft_apps_manager::macos_build::install_build(&paths, app, &job);
+        }
+        anyhow::bail!(
+            "Install built app currently supports WordCraft, GridCraft and DeckCraft on macOS"
+        );
+    }
+
     // Old scheduled tasks keep their command line after an executable update.
     // Route both legacy background commands and new commands to checks only.
     let background = args.iter().any(|s| s == "--background");

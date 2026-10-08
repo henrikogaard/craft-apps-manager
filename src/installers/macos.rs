@@ -67,17 +67,9 @@ pub fn detect(app: &str) -> Result<Option<Installed>> {
         if !bundle.is_dir() || crate::files::linked(&bundle)? {
             continue;
         }
-        let Ok(id) = verify_identity(&bundle, app) else {
-            continue;
-        };
-        return Ok(Some(Installed {
-            name: app.into(),
-            version: platform::executable_version(&bundle).unwrap_or_else(|| "0.0.0".into()),
-            path: folder.display().to_string(),
-            architecture: crate::model::MANAGER_ARCH.into(),
-            install_kind: "installer".into(),
-            product_code: id,
-        }));
+        if let Ok(record) = crate::macos_build::inspect(&bundle, app) {
+            return Ok(Some(record));
+        }
     }
     Ok(None)
 }

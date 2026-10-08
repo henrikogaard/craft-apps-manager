@@ -13,3 +13,6 @@ pub mod scheduler;
 pub mod self_update;
 pub mod tools;
 pub mod updates;
+
+#[cfg(target_os = "macos")]
+pub mod macos_build;

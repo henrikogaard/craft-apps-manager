@@ -149,6 +149,7 @@ fn detect_package(app: &str, package: &str) -> Result<Option<Installed>> {
         architecture: architecture.into(),
         install_kind: "installer".into(),
         product_code: package.into(),
+        ..Default::default()
     }))
 }
 pub fn run(file: &Path, app: &str) -> Result<Installed> {

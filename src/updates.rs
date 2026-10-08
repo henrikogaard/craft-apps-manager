@@ -215,7 +215,19 @@ fn releases_for(paths: &Paths, job: &Job, selected: Option<&str>) -> Result<()> 
                 } else {
                     network.asset(asset, &dest, job)?;
                 }
-                job.stage("Installing", None, "Complete the Windows installer wizard; Windows may ask for administrator permission.");
+                job.stage(
+                    "Installing",
+                    None,
+                    if cfg!(target_os = "macos") {
+                        "Verifying the release and installing into Applications"
+                    } else {
+                        "Complete the installer; administrator permission may be required"
+                    },
+                );
+                #[cfg(target_os = "macos")]
+                let mut installed =
+                    crate::macos_build::install_release(paths, &app.name, &dest, job)?;
+                #[cfg(not(target_os = "macos"))]
                 let mut installed = crate::installers::run_with_job(&dest, &app.name, Some(job))?;
                 installed.architecture = prefs.architecture.clone();
                 config.apps[i] = installed;

@@ -7,19 +7,30 @@ output=${1:-"$project/dist/macos"}
 version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$project/Cargo.toml" | head -1)
 case "$version" in ''|*[!0-9.]*) echo "Invalid package version" >&2; exit 1;; esac
 cd "$project"
-for target in aarch64-apple-darwin x86_64-apple-darwin; do
+arch=${CRAFT_MANAGER_ARCH:-universal}
+case "$arch" in
+    universal) targets="aarch64-apple-darwin x86_64-apple-darwin" ;;
+    arm64) targets="aarch64-apple-darwin" ;;
+    x64) targets="x86_64-apple-darwin" ;;
+    *) echo "CRAFT_MANAGER_ARCH must be universal, arm64 or x64" >&2; exit 1 ;;
+esac
+for target in $targets; do
     cargo build --release --locked --target "$target"
 done
 mkdir -p "$output"
 output=$(CDPATH= cd -- "$output" && pwd)
 bundle="$output/Craft Apps Manager.app"
-archive="$output/Craft-Apps-Manager-$version-macos-universal.zip"
+archive="$output/Craft-Apps-Manager-$version-macos-$arch.zip"
 [ ! -e "$archive" ] || { echo "Package already exists: $archive" >&2; exit 1; }
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-lipo -create -output "$bundle/Contents/MacOS/craft-apps-manager" \
-    target/aarch64-apple-darwin/release/craft-apps-manager \
-    target/x86_64-apple-darwin/release/craft-apps-manager
+if [ "$arch" = universal ]; then
+    lipo -create -output "$bundle/Contents/MacOS/craft-apps-manager" \
+        target/aarch64-apple-darwin/release/craft-apps-manager \
+        target/x86_64-apple-darwin/release/craft-apps-manager
+else
+    cp "target/$targets/release/craft-apps-manager" "$bundle/Contents/MacOS/craft-apps-manager"
+fi
 iconset=$(mktemp -d)/icon.iconset
 mkdir -p "$iconset"
 for size in 16 32 128 256 512; do

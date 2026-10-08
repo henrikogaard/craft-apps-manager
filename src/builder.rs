@@ -8,6 +8,10 @@ use anyhow::{bail, Context, Result};
 use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 pub fn build(paths: &Paths, app: &str, latest: bool, job: &Job) -> Result<()> {
     crate::model::valid_app(app)?;
+    #[cfg(target_os = "macos")]
+    if crate::macos_build::supported(app) {
+        return crate::macos_build::build(paths, app, latest, job);
+    }
     let _lock = platform::Lock::take("Local\\CraftAppsSourceBuilder")?;
     job.log(&format!(
         "\nCraft Apps Builder — {app} — {}",

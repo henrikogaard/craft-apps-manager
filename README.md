@@ -1,5 +1,7 @@
 # Craft Apps Manager
 
+This fork adds native macOS source bundles for WordCraft, GridCraft and DeckCraft, installed commit tracking, safe reuse of existing repositories, and persistent installed-app backups with restore. See [macOS setup](docs/macos.md#native-source-builds). Packages built from this fork check this fork’s releases when `CRAFT_MANAGER_REPOSITORY=henrikogaard/craft-apps-manager` is set.
+
 <img src="assets/icon.png" width="80" alt="Craft Apps Manager icon">
 
 A desktop app for downloading, updating, and building the Craft apps from Storytold. I made this to keep the apps, source downloads, and builds in one place without having to manage every release by hand.
@@ -98,7 +100,7 @@ Settings also has a separate check for this manager itself. Startup checks are o
 
 ## Building from source
 
-Open **Build from source**, select an app, and use **Set up build tools** before building. The setup installs only the extra tools needed for that app. Source builds currently require 64-bit Windows, even with the x86 manager. App and source updates work with either manager architecture. Rust builds require Microsoft's C++ build tools; ArtCraft X also needs its frontend tools.
+Open **Build from source**, select an app, and use **Set up build tools** before building. The setup installs only the extra tools needed for that app. Windows source builds require 64-bit Windows, even with the x86 manager. macOS supports native app bundles for WordCraft, GridCraft and DeckCraft; see [the macOS source-build workflow](docs/macos.md#native-source-builds) for repository reuse, commit checks and installation. App and source updates work with either manager architecture. Rust builds require Microsoft's C++ build tools; ArtCraft X also needs its frontend tools.
 
 The builder uses the upstream source and lockfiles without dependency patches. Build output appears in `builds`, and the log remains available when you reopen the builder. Failed or canceled builds keep their cache so you can try again. Successful-build cleanup is configurable.
 
@@ -113,7 +115,7 @@ releases/           Portable apps and downloaded installers
 sources/            Source ZIPs and their index
 builds/             Finished builds, grouped by app
 logs/               Update and build logs
-backups/releases/   Portable app backups
+backups/releases/   Portable and macOS installed app backups
 backups/sources/    Source backups
 workspace/          Build tools, extracted sources, and build cache
 runtime/            Download staging and internal state

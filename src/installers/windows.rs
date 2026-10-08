@@ -128,6 +128,7 @@ pub fn detect(app: &str) -> Result<Option<Installed>> {
                     .into(),
                     install_kind: "installer".into(),
                     product_code: if msi == 1 { name } else { String::new() },
+                    ..Default::default()
                 }));
             }
         }

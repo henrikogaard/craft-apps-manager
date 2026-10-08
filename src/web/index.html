@@ -30,6 +30,8 @@
         --button: #ececec;
         --button-text: #181818;
         --shadow: 0 12px 40px #0004;
+        --accent: #6aa8ff;
+        --bar: 48px;
       }
       :root[data-theme="light"] {
         color-scheme: light;
@@ -44,6 +46,7 @@
         --button: #252525;
         --button-text: #fff;
         --shadow: 0 12px 40px #0001;
+        --accent: #1f6feb;
       }
       * {
         box-sizing: border-box;
@@ -82,6 +85,8 @@
         cursor: default;
       }
       button:focus-visible,
+      .app-card:focus-visible,
+      .side-app:focus-visible,
       input:focus-visible,
       select:focus-visible,
       summary:focus-visible {
@@ -192,13 +197,17 @@
       aside {
         display: flex;
         flex-direction: column;
-        padding: 14px 10px;
+        padding: 0 10px 12px;
       }
       .workspace {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 6px 8px 15px;
+        height: var(--bar);
+        flex-shrink: 0;
+        margin: 0 -10px 10px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--line);
         font-size: 12px;
         font-weight: 600;
       }
@@ -239,12 +248,53 @@
       .side-app {
         display: flex;
         align-items: center;
-        gap: 9px;
+        gap: 10px;
         width: 100%;
         text-align: left;
         color: var(--muted);
-        padding: 7px 9px;
+        padding: 4px 4px 4px 10px;
+        min-height: 33px;
         font-size: 12px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .side-app:hover {
+        background: var(--hover);
+      }
+      .side-app .name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .side-app .shortcut {
+        font-size: 10px;
+        color: var(--subtle);
+        padding-right: 6px;
+      }
+      .side-app .open {
+        display: none;
+        font-size: 11px;
+        padding: 3px 8px;
+        border-color: var(--line);
+        background: var(--raised);
+        color: var(--text);
+      }
+      .side-app:hover .open,
+      .side-app:focus-within .open {
+        display: inline-flex;
+      }
+      .side-app:hover .shortcut,
+      .side-app:focus-within .shortcut {
+        display: none;
+      }
+      .update-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
       }
       .side-app.active {
         background: var(--hover);
@@ -272,12 +322,13 @@
         flex-direction: column;
       }
       .main-top {
-        height: 45px;
+        height: var(--bar);
+        flex-shrink: 0;
         display: flex;
         align-items: center;
         border-bottom: 1px solid var(--line);
-        padding: 0 17px;
-        gap: 8px;
+        padding: 0 10px 0 16px;
+        gap: 6px;
       }
       .breadcrumb {
         font-size: 11px;
@@ -357,6 +408,7 @@
         gap: 10px;
       }
       .app-card {
+        cursor: pointer;
         padding: 16px 15px 12px;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -406,6 +458,8 @@
       .card-bottom {
         margin-top: 15px;
         padding-top: 9px;
+        min-height: 33px;
+        gap: 8px;
         border-top: 1px solid var(--line);
         display: flex;
         align-items: center;
@@ -417,13 +471,39 @@
         width: 13px;
         height: 13px;
       }
+      .card-bottom .open {
+        font-size: 11px;
+        padding: 4px 11px;
+        border-color: var(--line);
+        background: var(--raised);
+        color: var(--text);
+      }
+      .app-card:hover .card-bottom .open {
+        background: var(--button);
+        color: var(--button-text);
+        border-color: var(--button);
+      }
+      .version-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+        white-space: nowrap;
+      }
+      .version-line .new {
+        color: var(--accent);
+        font-weight: 600;
+      }
       .status-dot {
         display: inline-block;
         width: 5px;
         height: 5px;
         background: var(--muted);
         border-radius: 50%;
-        margin-right: 5px;
+        flex-shrink: 0;
+      }
+      .status-dot.new {
+        background: var(--accent);
       }
       .empty {
         padding: 40px 10px;
@@ -446,7 +526,9 @@
         display: flex;
         align-items: center;
         gap: 7px;
-        padding: 13px 16px;
+        height: var(--bar);
+        flex-shrink: 0;
+        padding: 0 10px 0 16px;
         border-bottom: 1px solid var(--line);
         font-size: 12px;
         font-weight: 500;
@@ -455,7 +537,7 @@
         margin-left: auto;
       }
       .inspector-body {
-        padding: 21px 18px;
+        padding: 22px 16px;
         overflow: auto;
         flex: 1;
       }
@@ -483,6 +565,10 @@
         gap: 7px;
       }
       .install-row .primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
         flex: 1;
         padding: 10px;
       }
@@ -504,6 +590,116 @@
       }
       .info-row span:first-child {
         color: var(--muted);
+      }
+      .info-row .new {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .link {
+        padding: 0;
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .link:hover {
+        background: none;
+        color: var(--text);
+      }
+      .updates {
+        margin: 20px 0 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--raised);
+        overflow: hidden;
+      }
+      .updates-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px 10px 14px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .updates-head .update-dot {
+        margin-right: 2px;
+      }
+      .updates-head .summary {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .updates-head .summary span {
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .update-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 12px 7px 14px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .update-row:hover {
+        background: var(--hover);
+      }
+      .update-row img {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        filter: grayscale(1);
+      }
+      .update-row .versions {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .update-row .versions .new {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .update-row button,
+      .updates-head button {
+        font-size: 11px;
+        padding: 4px 11px;
+      }
+      .check-all {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        padding: 5px 10px;
+        border-color: var(--line);
+        background: var(--raised);
+      }
+      .check-all svg {
+        width: 14px;
+        height: 14px;
+      }
+      kbd {
+        font: 10px DM, sans-serif;
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--muted);
+      }
+      .search kbd {
+        position: absolute;
+        right: 9px;
+        top: 8px;
+      }
+      .shortcuts {
+        margin-top: 18px;
+        font-size: 11px;
+        color: var(--subtle);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
       }
       .section-rule {
         height: 1px;
@@ -555,7 +751,7 @@
       }
       .right-bottom {
         font-size: 10px;
-        padding: 11px 18px;
+        padding: 11px 16px;
         border-top: 1px solid var(--line);
         color: var(--muted);
         display: flex;
@@ -620,9 +816,17 @@
         z-index: 15;
         display: none;
       }
+      #toast.show {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      #toast span {
+        flex: 1;
+      }
       #toast button {
-        float: right;
-        margin-left: 10px;
+        padding: 2px 7px;
+        color: var(--muted);
       }
       .log {
         font:
@@ -813,8 +1017,17 @@
             ><span id="tab-label">All apps</span></span
           ><span class="breadcrumb">Official / Storytold</span
           ><button
+            class="check-all"
+            id="check-updates"
+            title="Check every installed app for a newer release. Nothing is downloaded."
+            onclick="send('check-updates')"
+          >
+            <span data-icon="refresh"></span
+            ><span id="check-label">Check all</span></button
+          ><button
             class="icon-button"
             title="Refresh installed apps"
+            aria-label="Refresh installed apps"
             onclick="send('refresh')"
           >
             <span data-icon="refresh"></span>
@@ -854,6 +1067,8 @@
           preferences: {},
           buildPreferences: {},
           ui: { theme: "dark" },
+          updates: {},
+          launches: {},
           auto: false,
           autoSource: false,
         },
@@ -862,7 +1077,9 @@
         selected = "wordcraft",
         query = "",
         category = "all",
-        managerAvailable = false;
+        managerAvailable = false,
+        firstSnapshot = true,
+        showUpdates = false;
       let lastCatalog = "",
         lastDetail = "",
         lastJob = "";
@@ -882,6 +1099,7 @@
         refresh: '<path d="M20 7a9 9 0 1 0 1 8M20 3v5h-5"/>',
         arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
         code: '<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/>',
+        play: '<path d="M7 4v16l13-8z"/>',
       };
       function icon(name) {
         return `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.box}</svg>`;
@@ -917,15 +1135,57 @@
       function app(id) {
         return catalog.find((a) => a.id === id);
       }
+      // Latest-release check for the installed version, if one has run.
+      function check(id) {
+        return installed(id) && (state.updates || {})[id];
+      }
+      function newer(id) {
+        return check(id)?.latest || "";
+      }
+      function ago(seconds) {
+        if (!seconds) return "";
+        const m = Math.round((Date.now() / 1000 - seconds) / 60);
+        if (m < 1) return "just now";
+        if (m < 60) return `${m} min ago`;
+        if (m < 60 * 24) return `${Math.round(m / 60)} h ago`;
+        return `${Math.round(m / 60 / 24)} d ago`;
+      }
+      // Sidebar order stays fixed so ⌘1–⌘9 always open the same app.
+      function installedApps() {
+        return catalog.filter((a) => installed(a.id));
+      }
+      function recentFirst(list) {
+        const at = (a) => (state.launches || {})[a.id] || 0;
+        return [...list].sort((x, y) => at(y) - at(x));
+      }
+      function launch(id) {
+        if (!installed(id)) return choose(id);
+        selected = id;
+        lastDetail = "";
+        send("launch", { app: id });
+        render();
+      }
+      function versionLine(id) {
+        const i = installed(id);
+        if (!i) return '<span class="version-line">Available</span>';
+        const c = check(id);
+        if (c?.latest)
+          return `<span class="version-line" title="Update available"><span class="status-dot new"></span>${esc(i.version)} → <span class="new">${esc(c.latest)}</span></span>`;
+        return `<span class="version-line"><span class="status-dot"></span>${esc(i.version)}${c ? " · Up to date" : ""}</span>`;
+      }
       function toast(text) {
         const e = document.getElementById("toast");
-        e.textContent = text;
+        e.innerHTML = "";
+        const t = document.createElement("span");
+        t.textContent = text;
         const b = document.createElement("button");
         b.textContent = "×";
         b.setAttribute("aria-label", "Dismiss message");
-        b.onclick = () => (e.style.display = "none");
-        e.prepend(b);
-        e.style.display = "block";
+        b.onclick = () => e.classList.remove("show");
+        e.append(t, b);
+        e.classList.add("show");
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => e.classList.remove("show"), 6000);
       }
       function theme(value, persist = true) {
         document.documentElement.dataset.theme = value;
@@ -952,28 +1212,23 @@
         return job.busy ? " disabled" : "";
       }
       function nav() {
+        const updates = installedApps().filter((a) => newer(a.id)).length;
         document.getElementById("nav").innerHTML = [
+          ["installed", "play", "My apps", installedApps().length],
           ["all", "grid", "All apps", catalog.length],
-          [
-            "installed",
-            "box",
-            "My apps",
-            state.apps.filter((a) => a.path).length,
-          ],
           ["builds", "build", "Builds", Object.keys(state.builds).length],
           ["activity", "activity", "Activity", ""],
         ]
           .map(
             ([id, sym, label, count]) =>
-              `<button class="${current === id ? "active" : ""}" onclick="view('${id}')">${icon(sym)}${label}<span class="count">${count}</span></button>`,
+              `<button class="${current === id ? "active" : ""}" onclick="view('${id}')">${icon(sym)}${label}<span class="count">${id === "installed" && updates ? `<span class="update-dot" style="display:inline-block;margin-right:6px" title="${updates} update${updates === 1 ? "" : "s"} available"></span>` : ""}${count}</span></button>`,
           )
           .join("");
         document.getElementById("side-apps").innerHTML =
-          catalog
-            .filter((a) => installed(a.id))
+          installedApps()
             .map(
-              (a) =>
-                `<button class="side-app ${selected === a.id ? "active" : ""}" onclick="choose('${a.id}')"><img src="${a.icon}" alt="">${a.name}</button>`,
+              (a, n) =>
+                `<div class="side-app ${selected === a.id ? "active" : ""}" role="button" tabindex="0" title="Double-click to open ${a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><img src="${a.icon}" alt=""><span class="name">${a.name}</span>${newer(a.id) ? `<span class="update-dot" title="Update available: ${esc(newer(a.id))}"></span>` : ""}${n < 9 ? `<span class="shortcut">⌘${n + 1}</span>` : ""}<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button></div>`,
             )
             .join("") ||
           '<p class="tiny" style="padding:10px">Your installed apps appear here.</p>';
@@ -990,6 +1245,8 @@
           current,
           state.apps,
           state.builds,
+          state.updates,
+          state.launches,
           job.busy,
           selected,
         ]);
@@ -1006,6 +1263,10 @@
           : "All apps are fetched from official Storytold repositories";
         document.getElementById("progress").hidden = !job.busy;
         document.getElementById("cancel").hidden = !job.busy;
+        document.getElementById("check-updates").disabled =
+          job.busy || !installedApps().length;
+        document.getElementById("check-label").textContent =
+          job.busy && job.stage === "Checking for updates" ? "Checking…" : "Check all";
       }
       function renderContent() {
         let e = document.getElementById("content");
@@ -1031,10 +1292,29 @@
               '<div class="empty">Select an app and open Source build to create your first build.</div>';
           return;
         }
-        e.innerHTML = `<h1>${current === "installed" ? "My apps" : "Your creative toolkit"}</h1><p>${current === "installed" ? "Installed apps, ready when you are." : "14 independent tools. One place to keep them up to date."}</p><div class="filters"><div class="search">${icon("search")}<input type="search" id="search" aria-label="Search apps" placeholder="Search apps…" value="${esc(query)}"></div><select id="category" aria-label="Filter by category"><option value="all">All categories</option>${[...new Set(catalog.map((a) => a.category))].map((c) => `<option${category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div><div class="section-title"><span id="result-count"></span><span>Official Storytold repositories</span></div><div class="grid" id="grid"></div>`;
+        const mine = current === "installed";
+        const waiting = installedApps().filter((a) => newer(a.id));
+        const banner = waiting.length
+          ? `<div class="updates"><div class="updates-head"><span class="update-dot"></span><span class="summary">${waiting.length} update${waiting.length === 1 ? "" : "s"} available <span>· ${waiting.map((a) => a.name).join(", ")}</span></span><button class="quiet" aria-expanded="${showUpdates}" onclick="showUpdates=!showUpdates;lastCatalog='';render()">${showUpdates ? "Hide" : "Show"}</button><button class="primary"${disabled()} onclick="confirmUpdateAll()">Update all</button></div>${(showUpdates ? waiting : []).map((a) => `<div class="update-row" onclick="choose('${a.id}')"><img src="${a.icon}" alt=""><span>${a.name}</span><span class="versions">${esc(installed(a.id).version)} → <span class="new">${esc(newer(a.id))}</span></span><button class="secondary"${disabled()} onclick="event.stopPropagation();choose('${a.id}');confirmAction('install-latest')">Update</button></div>`).join("")}</div>`
+          : "";
+        const checks = installedApps()
+          .map((a) => check(a.id)?.checked)
+          .filter(Boolean);
+        const checked = !checks.length
+          ? "Not checked yet"
+          : checks.length < installedApps().length
+            ? `Some apps not checked · ${ago(Math.min(...checks))}`
+            : `${waiting.length ? "Checked" : "All up to date · checked"} ${ago(Math.min(...checks))}`;
+        e.innerHTML = `<h1>${mine ? "My apps" : "Your creative toolkit"}</h1><p>${mine ? "Recently opened first. Double-click an app or press Return to open it." : `${catalog.length} independent tools. One place to keep them up to date.`}</p>${banner}<div class="filters"><div class="search">${icon("search")}<input type="search" id="search" aria-label="Search apps" placeholder="Search apps…" value="${esc(query)}"><kbd>⌘K</kbd></div><select id="category" aria-label="Filter by category"><option value="all">All categories</option>${[...new Set(catalog.map((a) => a.category))].map((c) => `<option${category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div><div class="section-title"><span id="result-count"></span><span>${mine ? checked : "Official Storytold repositories"}</span></div><div class="grid" id="grid"></div>${mine && installedApps().length ? '<div class="shortcuts"><span><kbd>⌘K</kbd> search</span><span><kbd>↩</kbd> open best match</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> open from sidebar</span><span><kbd>⌘O</kbd> open selected</span></div>' : ""}`;
         document.getElementById("search").oninput = (e) => {
           query = e.target.value;
           renderGrid();
+        };
+        // Return in the search box opens the best match, like a launcher.
+        document.getElementById("search").onkeydown = (e) => {
+          if (e.key !== "Enter") return;
+          const first = document.querySelector("#grid .app-card");
+          if (first) launch(first.dataset.id);
         };
         document.getElementById("category").onchange = (e) => {
           category = e.target.value;
@@ -1043,7 +1323,7 @@
         renderGrid();
       }
       function renderGrid() {
-        const visible = catalog.filter(
+        let visible = catalog.filter(
           (a) =>
             (current !== "installed" || installed(a.id)) &&
             (!query ||
@@ -1052,13 +1332,15 @@
                 .includes(query.toLowerCase())) &&
             (category === "all" || a.category === category),
         );
+        if (current === "installed") visible = recentFirst(visible);
         document.getElementById("result-count").textContent =
           `${visible.length} ${visible.length === 1 ? "app" : "apps"}`;
         document.getElementById("grid").innerHTML =
           visible
             .map((a) => {
               const i = installed(a.id);
-              return `<button class="app-card ${selected === a.id ? "selected" : ""}" aria-pressed="${selected === a.id}" onclick="choose('${a.id}')"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div></div><div class="description">${a.description}</div><div class="card-bottom"><span>${i ? `<span class="status-dot"></span>Installed · ${esc(i.version)}` : "Available"}${a.id === "artcraftx" ? " · Experimental" : ""}</span>${icon("arrow")}</div></button>`;
+              const opened = (state.launches || {})[a.id];
+              return `<div class="app-card ${selected === a.id ? "selected" : ""}" data-id="${a.id}" role="button" tabindex="0" aria-pressed="${selected === a.id}" title="${i ? `Double-click to open ${a.name}${opened ? ` · Opened ${ago(opened)}` : ""}` : a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div></div><div class="description">${a.description}</div><div class="card-bottom">${versionLine(a.id)}${a.id === "artcraftx" ? '<span class="tiny">Experimental</span>' : ""}${i ? `<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button>` : icon("arrow")}</div></div>`;
             })
             .join("") || '<div class="empty">No apps match your search.</div>';
       }
@@ -1067,11 +1349,13 @@
           i = installed(selected),
           build = state.builds[selected],
           backs = state.backups[selected] || [];
-        const key = JSON.stringify([selected, i, build, backs, job.busy]);
+        const c = check(selected),
+          latest = c?.latest;
+        const key = JSON.stringify([selected, i, c, build, backs, job.busy]);
         if (key === lastDetail) return;
         lastDetail = key;
         document.getElementById("inspector").innerHTML =
-          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row"><button class="primary"${disabled()} onclick="confirmAction('install-latest')">${i ? "Update to latest" : "Install latest"}</button>${i ? `<button class="secondary"${disabled()} onclick="send('launch')">Open</button>` : ""}</div><p class="install-note">Official Mac release, or a source build when no Mac release is available.</p><div class="info-row"><span>Status</span><span>${i ? "Installed" : "Not installed"}</span></div>${i ? `<div class="info-row"><span>Version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div><div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Build the latest official source into a native .app. Your archive repositories are never used.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button><button class="secondary"${disabled()} onclick="send('check-release')">Check release</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">A previous version is saved when you update an installed app.</p>'}</details></div><div class="right-bottom">${icon("check")}Official source · Verified bundles</div>`;
+          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row">${!i ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Install latest</button>` : latest ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Update to ${esc(latest)}</button><button class="secondary" onclick="launch(selected)">Open</button>` : `<button class="primary" onclick="launch(selected)">${icon("play")} Open</button><button class="secondary"${disabled()} onclick="send('check-release')">Check for update</button>`}</div>${!i || latest ? '<p class="install-note">Official Mac release, or a source build when no Mac release is available.</p>' : '<p class="install-note">Double-click the app anywhere in the library, or press ⌘O.</p>'}<div class="info-row"><span>Status</span><span>${!i ? "Not installed" : latest ? '<span class="new">Update available</span>' : c ? "Up to date" : "Installed"}</span></div>${i ? `<div class="info-row"><span>Installed version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Latest version</span><span>${latest ? `<span class="new">${esc(latest)}</span>` : c ? esc(i.version) : `<button class="link"${disabled()} onclick="send('check-release')">Check now</button>`}</span></div>${c?.checked ? `<div class="info-row"><span>Last checked</span><span>${ago(c.checked)}</span></div>` : ""}<div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div><div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Build the latest official source into a native .app. Your archive repositories are never used.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button><button class="secondary"${disabled()} onclick="confirmAction('install-latest')">Reinstall latest…</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">A previous version is saved when you update an installed app.</p>'}</details></div><div class="right-bottom">${icon("check")}Official source · Verified bundles</div>`;
       }
       function modal(title, body, actions) {
         document.getElementById("modal-root").innerHTML =
@@ -1147,6 +1431,14 @@
         });
         closeModal();
       }
+      function confirmUpdateAll() {
+        const waiting = installedApps().filter((a) => newer(a.id));
+        modal(
+          `Update ${waiting.length} app${waiting.length === 1 ? "" : "s"}`,
+          `<p>These apps are updated one after another from their official Mac releases. Close them first. Previous versions are backed up according to your settings.</p><div class="updates" style="margin-top:14px">${waiting.map((a) => `<div class="update-row" style="cursor:default"><img src="${a.icon}" alt=""><span>${a.name}</span><span class="versions">${esc(installed(a.id).version)} → <span class="new">${esc(newer(a.id))}</span></span><span></span></div>`).join("")}</div>`,
+          `<button class="primary" onclick="send('update-all');closeModal();view('activity')">Update all</button>`,
+        );
+      }
       function confirmSelected() {
         modal(
           "Install selected apps",
@@ -1158,6 +1450,14 @@
         if (event.type === "snapshot") {
           state = event.data;
           theme(state.ui.theme, false);
+          if (firstSnapshot) {
+            firstSnapshot = false;
+            const mine = recentFirst(installedApps());
+            if (mine.length) {
+              current = "installed";
+              if (!installed(selected)) selected = mine[0].id;
+            }
+          }
           lastCatalog = "";
           render();
         } else if (event.type === "job") {
@@ -1188,7 +1488,23 @@
       };
       document.getElementById("drag").ondblclick = () => send("maximize");
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeModal();
+        if (e.key === "Escape") return closeModal();
+        if (document.querySelector(".modal")) return;
+        const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+        if ((e.metaKey && e.key === "k") || (e.key === "/" && !typing)) {
+          e.preventDefault();
+          if (current !== "all" && current !== "installed") view("installed");
+          document.getElementById("search")?.focus();
+        } else if (e.metaKey && /^[1-9]$/.test(e.key)) {
+          const a = installedApps()[Number(e.key) - 1];
+          if (a) {
+            e.preventDefault();
+            launch(a.id);
+          }
+        } else if (e.metaKey && e.key === "o") {
+          e.preventDefault();
+          launch(selected);
+        }
       });
       theme("dark", false);
       render();

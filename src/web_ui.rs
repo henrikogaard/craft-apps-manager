@@ -164,9 +164,34 @@ fn snapshot(paths: &Paths) -> Result<Value> {
         backup_items.insert(app, backups::list(paths, app)?.into_iter().map(|b| json!({"name":b.path.file_name().unwrap_or_default().to_string_lossy(),"source":b.source})).collect::<Vec<_>>());
     }
     let appearance: Appearance = files::read_or_default(&paths.at("ui-settings.json"))?;
+    let prefs = paths.preferences()?;
+    let checks = craft_apps_manager::hourly::read(paths)?;
+    // Only report a check that matches the installed version, so a stale result never shows.
+    let updates: BTreeMap<_, _> = config
+        .apps
+        .iter()
+        .filter(|a| !a.path.is_empty())
+        .filter_map(|a| {
+            let check = checks.get(&craft_apps_manager::hourly::key(&prefs, &a.name))?;
+            (check.installed == a.version).then(|| {
+                (
+                    a.name.clone(),
+                    json!({"latest":check.latest,"checked":check.checked}),
+                )
+            })
+        })
+        .collect();
+    let launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
     Ok(
-        json!({"apps":config.apps,"builds":builds,"backups":backup_items,"preferences":paths.preferences()?,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"apps":config.apps,"updates":updates,"launches":launches,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
     )
+}
+const LAUNCHES: &str = "runtime/launches.json";
+fn launch(paths: &Paths, app: &str) -> Result<()> {
+    apps::launch(paths, app)?;
+    let mut launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
+    launches.insert(app.into(), chrono::Utc::now().timestamp());
+    files::write_json(&paths.at(LAUNCHES), &launches)
 }
 fn refresh(paths: &Paths, proxy: &EventLoopProxy<UiEvent>) {
     let paths = paths.clone();
@@ -275,12 +300,20 @@ fn operation(
     match value["action"].as_str().context("Missing action")? {
         "install-latest" => macos_build::install_latest(paths, app, job),
         "install-selected" => macos_build::install_selected(paths, job),
+        "update-all" => macos_build::install_available(paths, job),
         "build" => builder::build(paths, app, true, job),
         "setup" => tools::setup(paths, app, job),
         "install-build" => macos_build::install_build(paths, app, job),
         "check-source" => macos_build::check_source(paths, app, job),
+        "check-updates" => craft_apps_manager::hourly::check_installed(paths, job),
         "check-release" => {
             let result = updates::check_app(paths, app)?;
+            craft_apps_manager::hourly::record(
+                paths,
+                app,
+                &apps::installed(paths, app)?.version,
+                result.clone(),
+            )?;
             post(
                 proxy,
                 UiEvent::Feedback(
@@ -379,7 +412,7 @@ pub fn run(paths: Paths) -> Result<()> {
                     let prefs = paths.preferences().unwrap_or_default();
                     if prefs.check_installed_apps_on_startup {
                         let p = paths.clone(); let tx = proxy.clone();
-                        std::thread::spawn(move || if let Err(e) = craft_apps_manager::hourly::run(&p, &Job::new(p.at("logs/checks.log"), &Default::default())) { post(&tx, UiEvent::Feedback(format!("Startup check failed: {e:#}"))); });
+                        std::thread::spawn(move || { if let Err(e) = craft_apps_manager::hourly::run(&p, &Job::new(p.at("logs/checks.log"), &Default::default())) { post(&tx, UiEvent::Feedback(format!("Startup check failed: {e:#}"))); } refresh(&p, &tx); });
                     }
                 }
             },
@@ -408,12 +441,12 @@ pub fn run(paths: Paths) -> Result<()> {
                     let app = value["app"].as_str().context("Missing app")?.to_owned(); model::valid_app(&app)?;
                     match action {
                         "repository" => return platform::open(Path::new(&format!("https://github.com/storytold/{}", model::repository(&app)))),
-                        "launch" => return apps::launch(&paths, &app),
+                        "launch" => { launch(&paths, &app)?; refresh(&paths, &proxy); return Ok(()); },
                         "open-app" => return platform::open(Path::new(&apps::installed(&paths, &app)?.path)),
                         "open-build" => return platform::open(&builder::history(&paths, &app).context("No local build exists")?),
                         "launch-settings" => { emit(&web, json!({"type":"launch-settings","settings":apps::settings(&paths,&app)?})); return Ok(()); },
                         "save-launch-settings" => { let mut settings = apps::settings(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); apps::save(&paths,&app,&settings)?; return Ok(()); },
-                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
+                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
                         _ => bail!("Unknown action"),
                     }
                     job = Job::new(paths.at(format!("logs/{app}.log")), &paths.builder_preferences()?);

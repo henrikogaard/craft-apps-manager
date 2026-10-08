@@ -694,6 +694,39 @@ pub fn install_selected(paths: &Paths, job: &Job) -> Result<()> {
     }
     Ok(())
 }
+/// Installs every app whose last release check found a newer version than the one installed.
+pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
+    let prefs = paths.preferences()?;
+    let checks = crate::hourly::read(paths)?;
+    let apps: Vec<_> = crate::updates::installed_check_targets(&paths.config()?)
+        .into_iter()
+        .filter(|app| {
+            checks
+                .get(&crate::hourly::key(&prefs, &app.name))
+                .is_some_and(|c| c.installed == app.version && c.latest.is_some())
+        })
+        .collect();
+    if apps.is_empty() {
+        bail!("No updates are waiting. Run Check all first.");
+    }
+    let mut failures = 0;
+    for app in &apps {
+        job.check()?;
+        job.log(&format!("Updating {}", crate::model::title(&app.name)));
+        if let Err(error) = install_latest(paths, &app.name, job) {
+            job.check()?;
+            failures += 1;
+            job.log(&format!("{}: {error:#}", app.name));
+        }
+    }
+    if failures > 0 {
+        bail!(
+            "{failures} of {} update(s) failed; see the activity log",
+            apps.len()
+        );
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

@@ -13,6 +13,8 @@ pub struct Availability {
     pub installed: String,
     pub latest: Option<String>,
     pub notified: Option<String>,
+    #[serde(default)]
+    pub checked: Option<i64>,
 }
 pub type Checks = BTreeMap<String, Availability>;
 pub fn key(prefs: &Preferences, app: &str) -> String {
@@ -36,6 +38,58 @@ pub fn run(paths: &Paths, job: &Job) -> Result<()> {
         |message| platform::notify(&std::env::current_exe()?, message),
     )?;
     files::write_json(&paths.at("runtime/app-update-checks.json"), &checks)
+}
+fn store(
+    checks: &mut Checks,
+    prefs: &Preferences,
+    app: &str,
+    installed: &str,
+    latest: Option<String>,
+) {
+    let state = checks.entry(key(prefs, app)).or_default();
+    state.installed = installed.into();
+    state.latest = latest;
+    state.checked = Some(chrono::Utc::now().timestamp());
+}
+/// Stores one app's release check so the library can show installed and latest versions.
+pub fn record(paths: &Paths, app: &str, installed: &str, latest: Option<String>) -> Result<()> {
+    let _lock = platform::Lock::take("Local\\CraftAppsManagerHourlyChecks")?;
+    let mut checks = read(paths)?;
+    store(&mut checks, &paths.preferences()?, app, installed, latest);
+    files::write_json(&paths.at("runtime/app-update-checks.json"), &checks)
+}
+/// Checks every installed app on request. Reports availability only; nothing is downloaded.
+pub fn check_installed(paths: &Paths, job: &Job) -> Result<()> {
+    let _lock = platform::Lock::take("Local\\CraftAppsManagerHourlyChecks")?;
+    let prefs = paths.preferences()?;
+    let targets = updates::installed_check_targets(&paths.config()?);
+    let mut checks = read(paths)?;
+    let mut available = 0;
+    for (n, app) in targets.iter().enumerate() {
+        job.check()?;
+        job.stage(
+            "Checking for updates",
+            Some(n as f32 / targets.len() as f32),
+            crate::model::title(&app.name),
+        );
+        match updates::check_app(paths, &app.name) {
+            Ok(latest) => {
+                job.log(&match &latest {
+                    Some(version) => format!("{}: {} → {version} available", app.name, app.version),
+                    None => format!("{}: {} is up to date", app.name, app.version),
+                });
+                available += usize::from(latest.is_some());
+                store(&mut checks, &prefs, &app.name, &app.version, latest);
+                files::write_json(&paths.at("runtime/app-update-checks.json"), &checks)?;
+            }
+            Err(error) => job.log(&format!("{}: check failed: {error:#}", app.name)),
+        }
+    }
+    job.log(&match available {
+        0 => "All installed apps are up to date".to_string(),
+        n => format!("{n} update(s) available"),
+    });
+    Ok(())
 }
 pub fn sources(paths: &Paths, job: &Job) -> Result<()> {
     source_checks(paths, job, |message| {
@@ -134,9 +188,8 @@ fn scan(
         job.check()?;
         match check(&app.name) {
             Ok(latest) => {
+                store(checks, prefs, &app.name, &app.version, latest.clone());
                 let state = checks.entry(key(prefs, &app.name)).or_default();
-                state.installed = app.version;
-                state.latest = latest.clone();
                 if let Some(version) = latest {
                     job.log(&format!("{}: update available ({version})", app.name));
                     if prefs.notify_updates && state.notified.as_deref() != Some(&version) {

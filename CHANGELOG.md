@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+
+- Right-click the Craft Library Dock icon to open any installed app; the Dock icon shows how many updates are waiting.
+- Show which Craft apps are running, on cards, in the sidebar and in app details.
+- Show “What’s new” for an available update, with a link to the full release notes.
+- Open, configure launch options for, and delete local source builds from Builds.
+- Move a leftover PrintCraft.app to the Trash once PdfCraft.app is installed beside it, and launch PdfCraft when old launch settings still name PrintCraft.
+- Fix running-app detection, which never matched, so the “close the app first” checks now work.
+- Report a late cancel or a real error correctly instead of always showing Cancelled (ported from upstream).
+
 ## 0.1.2
 
 - Fix updates failing with “Invalid app signature” when the installed app carries Finder info. Copied bundles now drop all extended attributes before the strict signature check.

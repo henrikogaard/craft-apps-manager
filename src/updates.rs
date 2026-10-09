@@ -34,6 +34,14 @@ pub fn release_version(app: &str, tag: &str) -> Result<String> {
     Ok(value.into())
 }
 pub fn check_app(paths: &Paths, app: &str) -> Result<Option<String>> {
+    Ok(newer_release(paths, app)?.map(|update| update.version))
+}
+/// A newer compatible release than the installed version, with its release notes.
+pub struct Update {
+    pub version: String,
+    pub notes: Option<String>,
+}
+pub fn newer_release(paths: &Paths, app: &str) -> Result<Option<Update>> {
     crate::model::valid_app(app)?;
     let installed = crate::apps::installed(paths, app)?;
     let release: Release = Network::new(&paths.root)?.json(&format!(
@@ -45,7 +53,15 @@ pub fn check_app(paths: &Paths, app: &str) -> Result<Option<String>> {
     }
     if version(&release_version(app, &release.tag_name)?)? > version(&installed.version)? {
         select_asset(&release, app, &paths.preferences()?)?;
-        Ok(Some(release_version(app, &release.tag_name)?))
+        // Notes are shown as plain text; keep the stored copy bounded.
+        let notes = release
+            .body
+            .map(|body| body.chars().take(20_000).collect::<String>())
+            .filter(|body| !body.trim().is_empty());
+        Ok(Some(Update {
+            version: release_version(app, &release.tag_name)?,
+            notes,
+        }))
     } else {
         Ok(None)
     }
@@ -225,11 +241,12 @@ pub fn sources(paths: &Paths, names: &[String], job: &Job) -> Result<()> {
             Ok(())
         })();
         if let Err(e) = result {
+            if crate::jobs::is_cancelled(&e) {
+                return Err(e);
+            }
             errors += 1;
             job.log(&format!("{name}: {e:#}"));
-            if e.to_string().contains("API limit")
-                || job.cancel.load(std::sync::atomic::Ordering::Relaxed)
-            {
+            if e.to_string().contains("API limit") {
                 break;
             }
         }
@@ -267,6 +284,7 @@ mod tests {
                     tag_name: "v0.3.0".into(),
                     draft: false,
                     prerelease: false,
+                    body: None,
                     assets: vec![crate::model::Asset {
                         name: name.clone(),
                         size: 1,

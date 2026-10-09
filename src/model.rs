@@ -203,6 +203,9 @@ pub struct Release {
     pub draft: bool,
     pub prerelease: bool,
     pub assets: Vec<Asset>,
+    /// Release notes (Markdown) as published on GitHub.
+    #[serde(default)]
+    pub body: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -31,6 +31,7 @@
         --button-text: #181818;
         --shadow: 0 12px 40px #0004;
         --accent: #6aa8ff;
+        --ok: #4cc38a;
         --bar: 48px;
       }
       :root[data-theme="light"] {
@@ -47,6 +48,7 @@
         --button-text: #fff;
         --shadow: 0 12px 40px #0001;
         --accent: #1f6feb;
+        --ok: #1a7f4b;
       }
       * {
         box-sizing: border-box;
@@ -680,6 +682,57 @@
         width: 14px;
         height: 14px;
       }
+      .run-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ok);
+        flex-shrink: 0;
+      }
+      .run-badge {
+        margin-left: auto;
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        color: var(--ok);
+        white-space: nowrap;
+      }
+      .notes {
+        margin: 18px 0 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .notes summary {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .notes ul {
+        margin: 8px 0 6px;
+        padding-left: 16px;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .notes li {
+        margin: 3px 0;
+      }
+      .notes .more {
+        font-size: 11px;
+        color: var(--subtle);
+      }
+      .build-item .actions {
+        flex: 0 1 auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        justify-content: flex-end;
+      }
+      .build-item .actions button {
+        padding: 6px 9px;
+      }
       kbd {
         font: 10px DM, sans-serif;
         border: 1px solid var(--line);
@@ -1079,7 +1132,8 @@
         category = "all",
         managerAvailable = false,
         firstSnapshot = true,
-        showUpdates = false;
+        showUpdates = false,
+        running = new Set();
       let lastCatalog = "",
         lastDetail = "",
         lastJob = "";
@@ -1165,6 +1219,33 @@
         send("launch", { app: id });
         render();
       }
+      function isRunning(id) {
+        return running.has(id);
+      }
+      // GitHub notes are mostly "* Title by @user in https://…/pull/1"; keep the titles.
+      function noteItems(text) {
+        const items = [];
+        for (const raw of String(text || "").split(/\r?\n/)) {
+          const m = raw.trim().match(/^[*-]\s+(.*)$/);
+          if (!m) continue;
+          const item = m[1]
+            .replace(/\s+by @[\w-]+(\[bot\])? in https?:\/\/\S+$/, "")
+            .replace(/\s+in https?:\/\/\S+$/, "")
+            .replace(/\*\*|__|`/g, "")
+            .trim();
+          if (!item || /^@[\w-]+ made their first contribution/i.test(item)) continue;
+          items.push(item);
+        }
+        return items;
+      }
+      function notesBlock(version, text) {
+        const items = noteItems(text);
+        const shown = items.slice(0, 6);
+        const body = shown.length
+          ? `<ul>${shown.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>${items.length > shown.length ? `<div class="more">and ${items.length - shown.length} more</div>` : ""}`
+          : `<p class="build-note">${esc(String(text).replace(/^#+\s*/gm, "").slice(0, 600))}</p>`;
+        return `<details class="notes" open><summary>What’s new in ${esc(version)}</summary>${body}<button class="link" onclick="send('release-notes')">Full release notes on GitHub</button></details>`;
+      }
       function versionLine(id) {
         const i = installed(id);
         if (!i) return '<span class="version-line">Available</span>';
@@ -1228,7 +1309,7 @@
           installedApps()
             .map(
               (a, n) =>
-                `<div class="side-app ${selected === a.id ? "active" : ""}" role="button" tabindex="0" title="Double-click to open ${a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><img src="${a.icon}" alt=""><span class="name">${a.name}</span>${newer(a.id) ? `<span class="update-dot" title="Update available: ${esc(newer(a.id))}"></span>` : ""}${n < 9 ? `<span class="shortcut">⌘${n + 1}</span>` : ""}<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button></div>`,
+                `<div class="side-app ${selected === a.id ? "active" : ""}" role="button" tabindex="0" title="Double-click to open ${a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><img src="${a.icon}" alt=""><span class="name">${a.name}</span>${isRunning(a.id) ? '<span class="run-dot" title="Running"></span>' : ""}${newer(a.id) ? `<span class="update-dot" title="Update available: ${esc(newer(a.id))}"></span>` : ""}${n < 9 ? `<span class="shortcut">⌘${n + 1}</span>` : ""}<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button></div>`,
             )
             .join("") ||
           '<p class="tiny" style="padding:10px">Your installed apps appear here.</p>';
@@ -1247,6 +1328,7 @@
           state.builds,
           state.updates,
           state.launches,
+          [...running],
           job.busy,
           selected,
         ]);
@@ -1279,12 +1361,12 @@
         }
         if (current === "builds") {
           e.innerHTML =
-            "<h1>Builds</h1><p>Native apps built from official source.</p>" +
+            "<h1>Builds</h1><p>Native apps built from official source. Open a build to try it without installing it.</p>" +
             catalog
               .filter((a) => state.builds[a.id])
               .map(
                 (a) =>
-                  `<div class="build-item"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><span class="tiny">${esc(state.builds[a.id].version || "Local source build")} · ${esc((state.builds[a.id].commit || "").slice(0, 10))}</span></div><button class="secondary" onclick="choose('${a.id}');send('open-build')">Folder</button><button class="primary"${disabled()} onclick="choose('${a.id}');confirmAction('install-build')">Install</button></div>`,
+                  `<div class="build-item"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><span class="tiny">${esc(state.builds[a.id].version || "Local source build")} · ${esc((state.builds[a.id].commit || "").slice(0, 10))}</span></div><div class="actions"><button class="primary" onclick="choose('${a.id}');send('launch-build')">Open</button><button class="secondary"${disabled()} onclick="choose('${a.id}');confirmAction('install-build')">Install</button><button class="secondary" onclick="choose('${a.id}');send('build-launch-settings')">Options…</button><button class="secondary" onclick="choose('${a.id}');send('open-build')">Folder</button><button class="quiet"${disabled()} onclick="choose('${a.id}');confirmAction('delete-build')">Delete…</button></div></div>`,
               )
               .join("");
           if (!Object.keys(state.builds).length)
@@ -1340,7 +1422,7 @@
             .map((a) => {
               const i = installed(a.id);
               const opened = (state.launches || {})[a.id];
-              return `<div class="app-card ${selected === a.id ? "selected" : ""}" data-id="${a.id}" role="button" tabindex="0" aria-pressed="${selected === a.id}" title="${i ? `Double-click to open ${a.name}${opened ? ` · Opened ${ago(opened)}` : ""}` : a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div></div><div class="description">${a.description}</div><div class="card-bottom">${versionLine(a.id)}${a.id === "artcraftx" ? '<span class="tiny">Experimental</span>' : ""}${i ? `<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button>` : icon("arrow")}</div></div>`;
+              return `<div class="app-card ${selected === a.id ? "selected" : ""}" data-id="${a.id}" role="button" tabindex="0" aria-pressed="${selected === a.id}" title="${i ? `Double-click to open ${a.name}${opened ? ` · Opened ${ago(opened)}` : ""}` : a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div>${isRunning(a.id) ? '<span class="run-badge"><span class="run-dot"></span>Running</span>' : ""}</div><div class="description">${a.description}</div><div class="card-bottom">${versionLine(a.id)}${a.id === "artcraftx" ? '<span class="tiny">Experimental</span>' : ""}${i ? `<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button>` : icon("arrow")}</div></div>`;
             })
             .join("") || '<div class="empty">No apps match your search.</div>';
       }
@@ -1351,11 +1433,11 @@
           backs = state.backups[selected] || [];
         const c = check(selected),
           latest = c?.latest;
-        const key = JSON.stringify([selected, i, c, build, backs, job.busy]);
+        const key = JSON.stringify([selected, i, c, build, backs, job.busy, isRunning(selected)]);
         if (key === lastDetail) return;
         lastDetail = key;
         document.getElementById("inspector").innerHTML =
-          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row">${!i ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Install latest</button>` : latest ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Update to ${esc(latest)}</button><button class="secondary" onclick="launch(selected)">Open</button>` : `<button class="primary" onclick="launch(selected)">${icon("play")} Open</button><button class="secondary"${disabled()} onclick="send('check-release')">Check for update</button>`}</div>${!i || latest ? '<p class="install-note">Official Mac release, or a source build when no Mac release is available.</p>' : '<p class="install-note">Double-click the app anywhere in the library, or press ⌘O.</p>'}<div class="info-row"><span>Status</span><span>${!i ? "Not installed" : latest ? '<span class="new">Update available</span>' : c ? "Up to date" : "Installed"}</span></div>${i ? `<div class="info-row"><span>Installed version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Latest version</span><span>${latest ? `<span class="new">${esc(latest)}</span>` : c ? esc(i.version) : `<button class="link"${disabled()} onclick="send('check-release')">Check now</button>`}</span></div>${c?.checked ? `<div class="info-row"><span>Last checked</span><span>${ago(c.checked)}</span></div>` : ""}<div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div><div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Build the latest official source into a native .app. Your archive repositories are never used.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button><button class="secondary"${disabled()} onclick="confirmAction('install-latest')">Reinstall latest…</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">A previous version is saved when you update an installed app.</p>'}</details></div><div class="right-bottom">${icon("check")}Official source · Verified bundles</div>`;
+          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row">${!i ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Install latest</button>` : latest ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Update to ${esc(latest)}</button><button class="secondary" onclick="launch(selected)">Open</button>` : `<button class="primary" onclick="launch(selected)">${icon("play")} Open</button><button class="secondary"${disabled()} onclick="send('check-release')">Check for update</button>`}</div>${!i || latest ? '<p class="install-note">Official Mac release, or a source build when no Mac release is available.</p>' : '<p class="install-note">Double-click the app anywhere in the library, or press ⌘O.</p>'}<div class="info-row"><span>Status</span><span>${!i ? "Not installed" : latest ? '<span class="new">Update available</span>' : c ? "Up to date" : "Installed"}${i && isRunning(selected) ? ' · <span style="color:var(--ok)">Running</span>' : ""}</span></div>${i ? `<div class="info-row"><span>Installed version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Latest version</span><span>${latest ? `<span class="new">${esc(latest)}</span>` : c ? esc(i.version) : `<button class="link"${disabled()} onclick="send('check-release')">Check now</button>`}</span></div>${c?.checked ? `<div class="info-row"><span>Last checked</span><span>${ago(c.checked)}</span></div>` : ""}<div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div>${latest && c.notes ? notesBlock(latest, c.notes) : ""}<div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Build the latest official source into a native .app. Your archive repositories are never used.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><div class="detail-buttons"><button class="secondary" onclick="send('launch-build')">Open build</button><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button><button class="quiet" onclick="send('build-launch-settings')">Build launch options…</button></div>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button><button class="secondary"${disabled()} onclick="confirmAction('install-latest')">Reinstall latest…</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">A previous version is saved when you update an installed app.</p>'}</details></div><div class="right-bottom">${icon("check")}Official source · Verified bundles</div>`;
       }
       function modal(title, body, actions) {
         document.getElementById("modal-root").innerHTML =
@@ -1382,9 +1464,11 @@
             "Replace the installed app with this verified backup. The displaced app is also backed up.",
           "delete-backup":
             "Permanently remove this selected backup from the manager’s library.",
+          "delete-build":
+            "Permanently delete the newest local build of this app. Source archives, other builds and the installed app are kept.",
         };
         modal(
-          `${{ "install-latest": "Install latest", "install-build": "Install build", uninstall: "Uninstall", restore: "Restore backup", "delete-backup": "Delete backup" }[action]} — ${a.name}`,
+          `${{ "install-latest": "Install latest", "install-build": "Install build", uninstall: "Uninstall", restore: "Restore backup", "delete-backup": "Delete backup", "delete-build": "Delete build" }[action]} — ${a.name}`,
           `<p>${descriptions[action]}</p>`,
           `<button class="primary" onclick="send('${action}',${backupSelection});closeModal();view('activity')">Continue</button>`,
         );
@@ -1476,11 +1560,15 @@
           }
         } else if (event.type === "feedback") toast(event.message);
         else if (event.type === "launch-settings") {
+          const save = event.build ? "save-build-launch-settings" : "save-launch-settings";
           modal(
-            "Launch settings",
-            `<p>One argument per line. Leave empty to use the default launch options.</p><textarea id="launch-arguments">${esc(event.settings.arguments.join("\n"))}</textarea>`,
-            `<button class="primary" onclick="send('save-launch-settings',{arguments:document.getElementById('launch-arguments').value});closeModal()">Save</button>`,
+            event.build ? "Build launch options" : "Launch settings",
+            `<p>${event.build ? "Used when you open the local build. Your installed app keeps its own settings. " : ""}One argument per line. Leave empty to use the default launch options.</p><textarea id="launch-arguments">${esc(event.settings.arguments.join("\n"))}</textarea>`,
+            `<button class="primary" onclick="send('${save}',{arguments:document.getElementById('launch-arguments').value});closeModal()">Save</button>`,
           );
+        } else if (event.type === "running") {
+          running = new Set(event.apps);
+          render();
         }
       };
       document.getElementById("drag").onmousedown = (e) => {

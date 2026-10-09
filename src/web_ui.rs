@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use craft_apps_manager::{
-    apps, backups, builder, files,
+    apps, backups, builder, dock, files,
     jobs::Job,
     macos_build,
     model::{self, BuilderPreferences, Paths, Preferences, APPS},
@@ -34,6 +34,7 @@ enum UiEvent {
     Message(Value),
     Snapshot(Value),
     Feedback(String),
+    Running(Vec<String>),
 }
 fn post(proxy: &EventLoopProxy<UiEvent>, event: UiEvent) {
     let _ = proxy.send_event(event);
@@ -41,94 +42,95 @@ fn post(proxy: &EventLoopProxy<UiEvent>, event: UiEvent) {
 fn png(bytes: &[u8]) -> String {
     format!("data:image/png;base64,{}", STANDARD.encode(bytes))
 }
+/// App id, category, description and icon, in library order.
+const CATALOG: [(&str, &str, &str, &[u8]); 14] = [
+    (
+        "designcraft",
+        "Design & layout",
+        "Arrange layouts, pages and creative projects.",
+        include_bytes!("../assets/app-icons/designcraft.png"),
+    ),
+    (
+        "effectcraft",
+        "Motion & video",
+        "Compose visual effects and motion graphics.",
+        include_bytes!("../assets/app-icons/effectcraft.png"),
+    ),
+    (
+        "filmcraft",
+        "Motion & video",
+        "Cut, edit and assemble your next film.",
+        include_bytes!("../assets/app-icons/filmcraft.png"),
+    ),
+    (
+        "lightcraft",
+        "Photography",
+        "Develop photographs and shape light and color.",
+        include_bytes!("../assets/app-icons/lightcraft.png"),
+    ),
+    (
+        "photocraft",
+        "Photography",
+        "Edit images and bring your photos into focus.",
+        include_bytes!("../assets/app-icons/photocraft.png"),
+    ),
+    (
+        "printcraft",
+        "Documents",
+        "Read, edit and work with PDF documents.",
+        include_bytes!("../assets/app-icons/pdfcraft.png"),
+    ),
+    (
+        "vectorcraft",
+        "Design & layout",
+        "Draw and refine precise vector artwork.",
+        include_bytes!("../assets/app-icons/vectorcraft.png"),
+    ),
+    (
+        "wordcraft",
+        "Documents",
+        "Write, format and compose your documents.",
+        include_bytes!("../assets/app-icons/wordcraft.png"),
+    ),
+    (
+        "gridcraft",
+        "Documents",
+        "Organize data and explore spreadsheets.",
+        include_bytes!("../assets/app-icons/gridcraft.png"),
+    ),
+    (
+        "deckcraft",
+        "Documents",
+        "Build presentations and share your ideas.",
+        include_bytes!("../assets/app-icons/deckcraft.png"),
+    ),
+    (
+        "cadcraft",
+        "3D & modeling",
+        "Model precise shapes and structures.",
+        include_bytes!("../assets/app-icons/cadcraft.png"),
+    ),
+    (
+        "soundcraft",
+        "Audio",
+        "Record, edit and arrange audio.",
+        include_bytes!("../assets/app-icons/soundcraft.png"),
+    ),
+    (
+        "artcraft",
+        "Creative tools",
+        "Create with ArtCraft’s creative toolkit.",
+        include_bytes!("../assets/icon.png"),
+    ),
+    (
+        "artcraftx",
+        "Creative tools",
+        "Explore the experimental ArtCraft X app.",
+        include_bytes!("../assets/icon.png"),
+    ),
+];
 fn catalog() -> Value {
-    let descriptions = [
-        (
-            "designcraft",
-            "Design & layout",
-            "Arrange layouts, pages and creative projects.",
-            include_bytes!("../assets/app-icons/designcraft.png").as_slice(),
-        ),
-        (
-            "effectcraft",
-            "Motion & video",
-            "Compose visual effects and motion graphics.",
-            include_bytes!("../assets/app-icons/effectcraft.png").as_slice(),
-        ),
-        (
-            "filmcraft",
-            "Motion & video",
-            "Cut, edit and assemble your next film.",
-            include_bytes!("../assets/app-icons/filmcraft.png").as_slice(),
-        ),
-        (
-            "lightcraft",
-            "Photography",
-            "Develop photographs and shape light and color.",
-            include_bytes!("../assets/app-icons/lightcraft.png").as_slice(),
-        ),
-        (
-            "photocraft",
-            "Photography",
-            "Edit images and bring your photos into focus.",
-            include_bytes!("../assets/app-icons/photocraft.png").as_slice(),
-        ),
-        (
-            "printcraft",
-            "Documents",
-            "Read, edit and work with PDF documents.",
-            include_bytes!("../assets/app-icons/pdfcraft.png").as_slice(),
-        ),
-        (
-            "vectorcraft",
-            "Design & layout",
-            "Draw and refine precise vector artwork.",
-            include_bytes!("../assets/app-icons/vectorcraft.png").as_slice(),
-        ),
-        (
-            "wordcraft",
-            "Documents",
-            "Write, format and compose your documents.",
-            include_bytes!("../assets/app-icons/wordcraft.png").as_slice(),
-        ),
-        (
-            "gridcraft",
-            "Documents",
-            "Organize data and explore spreadsheets.",
-            include_bytes!("../assets/app-icons/gridcraft.png").as_slice(),
-        ),
-        (
-            "deckcraft",
-            "Documents",
-            "Build presentations and share your ideas.",
-            include_bytes!("../assets/app-icons/deckcraft.png").as_slice(),
-        ),
-        (
-            "cadcraft",
-            "3D & modeling",
-            "Model precise shapes and structures.",
-            include_bytes!("../assets/app-icons/cadcraft.png").as_slice(),
-        ),
-        (
-            "soundcraft",
-            "Audio",
-            "Record, edit and arrange audio.",
-            include_bytes!("../assets/app-icons/soundcraft.png").as_slice(),
-        ),
-        (
-            "artcraft",
-            "Creative tools",
-            "Create with ArtCraft’s creative toolkit.",
-            include_bytes!("../assets/icon.png").as_slice(),
-        ),
-        (
-            "artcraftx",
-            "Creative tools",
-            "Explore the experimental ArtCraft X app.",
-            include_bytes!("../assets/icon.png").as_slice(),
-        ),
-    ];
-    Value::Array(descriptions.into_iter().map(|(id, category, description, bytes)| json!({"id":id,"name":model::title(id),"category":category,"description":description,"icon":png(bytes)})).collect())
+    Value::Array(CATALOG.iter().map(|(id, category, description, bytes)| json!({"id":id,"name":model::title(id),"category":category,"description":description,"icon":png(bytes)})).collect())
 }
 fn html() -> String {
     include_str!("web/index.html")
@@ -176,7 +178,7 @@ fn snapshot(paths: &Paths) -> Result<Value> {
             (check.installed == a.version).then(|| {
                 (
                     a.name.clone(),
-                    json!({"latest":check.latest,"checked":check.checked}),
+                    json!({"latest":check.latest,"checked":check.checked,"notes":check.notes}),
                 )
             })
         })
@@ -307,12 +309,13 @@ fn operation(
         "check-source" => macos_build::check_source(paths, app, job),
         "check-updates" => craft_apps_manager::hourly::check_installed(paths, job),
         "check-release" => {
-            let result = updates::check_app(paths, app)?;
+            let update = updates::newer_release(paths, app)?;
+            let result = update.as_ref().map(|u| u.version.clone());
             craft_apps_manager::hourly::record(
                 paths,
                 app,
                 &apps::installed(paths, app)?.version,
-                result.clone(),
+                update,
             )?;
             post(
                 proxy,
@@ -325,6 +328,12 @@ fn operation(
             Ok(())
         }
         "uninstall" => apps::uninstall(paths, app),
+        "delete-build" => {
+            let folder = builder::history(paths, app).context("No local build exists")?;
+            builder::delete_local(paths, app, &folder)?;
+            job.log(&format!("Deleted the local build of {}", model::title(app)));
+            Ok(())
+        }
         "restore" => backups::restore(paths, app, &selected_backup(paths, app, value)?, job),
         "delete-backup" => {
             backups::delete_selected(paths, app, &[selected_backup(paths, app, value)?])
@@ -332,6 +341,26 @@ fn operation(
         "fetch-sources" => updates::sources(paths, &paths.preferences()?.selected_sources, job),
         _ => bail!("Unknown operation"),
     }
+}
+/// Mirrors the library in the Dock: installed apps in its menu, update count on its badge.
+fn update_dock(value: &Value) {
+    let installed: Vec<&str> = value["apps"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|a| a["path"].as_str().is_some_and(|p| !p.is_empty()))
+        .filter_map(|a| a["name"].as_str())
+        .collect();
+    let apps: Vec<_> = CATALOG
+        .iter()
+        .filter(|(id, ..)| installed.contains(id))
+        .map(|(id, _, _, bytes)| (*id, model::title(id), *bytes))
+        .collect();
+    dock::set_apps(&apps);
+    let updates = value["updates"].as_object().map_or(0, |u| {
+        u.values().filter(|c| c["latest"].is_string()).count()
+    });
+    dock::set_badge(updates);
 }
 fn emit(web: &wry::WebView, value: Value) {
     let _ = web.evaluate_script(&format!("window.receive({value})"));
@@ -393,6 +422,9 @@ pub fn run(paths: Paths) -> Result<()> {
     let mut was_busy = false;
     let mut closing = false;
     let mut startup_pending = true;
+    let mut running: Vec<String> = Vec::new();
+    let mut last_running_poll = Instant::now() - Duration::from_secs(10);
+    let polling = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let initial_app = std::env::args()
         .collect::<Vec<_>>()
         .windows(2)
@@ -405,6 +437,7 @@ pub fn run(paths: Paths) -> Result<()> {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => { if job.state.lock().unwrap().busy { closing = true; job.cancel.store(true, Ordering::Relaxed); } else { *flow = ControlFlow::Exit; } },
             Event::UserEvent(UiEvent::Snapshot(value)) => {
                 let mut value = value; value["sparkle"] = serde_json::to_value(self_update::settings()).unwrap_or(Value::Null);
+                update_dock(&value);
                 emit(&web, json!({"type":"snapshot","data":value}));
                 if startup_pending {
                     startup_pending = false;
@@ -417,6 +450,11 @@ pub fn run(paths: Paths) -> Result<()> {
                 }
             },
             Event::UserEvent(UiEvent::Feedback(message)) => emit(&web, json!({"type":"feedback","message":message})),
+            Event::UserEvent(UiEvent::Running(apps)) => if apps != running { emit(&web, json!({"type":"running","apps":apps})); running = apps; },
+            Event::NewEvents(tao::event::StartCause::Init) => {
+                let launcher = std::sync::Mutex::new(proxy.clone());
+                dock::start(move |app| { if let Ok(proxy) = launcher.lock() { post(&proxy, UiEvent::Message(json!({"action":"launch","app":app}))); } });
+            },
             Event::UserEvent(UiEvent::Message(value)) => {
                 let result = (|| -> Result<()> {
                     let action = value["action"].as_str().context("Missing action")?;
@@ -445,8 +483,12 @@ pub fn run(paths: Paths) -> Result<()> {
                         "open-app" => return platform::open(Path::new(&apps::installed(&paths, &app)?.path)),
                         "open-build" => return platform::open(&builder::history(&paths, &app).context("No local build exists")?),
                         "launch-settings" => { emit(&web, json!({"type":"launch-settings","settings":apps::settings(&paths,&app)?})); return Ok(()); },
+                        "launch-build" => return builder::launch_local(&paths, &app),
+                        "build-launch-settings" => { emit(&web, json!({"type":"launch-settings","build":true,"settings":builder::launch_options(&paths,&app)?})); return Ok(()); },
+                        "save-build-launch-settings" => { let mut settings = builder::launch_options(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); builder::save_launch_options(&paths,&app,&settings)?; return Ok(()); },
+                        "release-notes" => return platform::open(Path::new(&format!("https://github.com/storytold/{}/releases/latest", model::repository(&app)))),
                         "save-launch-settings" => { let mut settings = apps::settings(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); apps::save(&paths,&app,&settings)?; return Ok(()); },
-                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
+                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
                         _ => bail!("Unknown action"),
                     }
                     job = Job::new(paths.at(format!("logs/{app}.log")), &paths.builder_preferences()?);
@@ -465,6 +507,12 @@ pub fn run(paths: Paths) -> Result<()> {
                 self_update::set_busy(state.busy);
                 was_busy = state.busy;
                 if closing && !state.busy { *flow = ControlFlow::Exit; }
+                // Which Craft apps are open, for the Running dots; one process listing every few seconds.
+                if last_running_poll.elapsed() >= Duration::from_secs(3) && !polling.swap(true, Ordering::AcqRel) {
+                    last_running_poll = Instant::now();
+                    let tx = proxy.clone(); let polling = polling.clone();
+                    std::thread::spawn(move || { if let Ok(apps) = platform::running_apps(APPS) { post(&tx, UiEvent::Running(apps)); } polling.store(false, Ordering::Release); });
+                }
             },
             _ => {},
         }

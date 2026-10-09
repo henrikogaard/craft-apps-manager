@@ -424,6 +424,9 @@ fn install_in(
             job.log(&format!("Backup retained: {e:#}"));
         }
     }
+    if let Some(home) = std::env::var_os("HOME") {
+        retire_legacy_bundles(app, folder, &PathBuf::from(home).join(".Trash"), job);
+    }
     job.log(&format!(
         "Installed {} {} ({})",
         crate::model::title(app),
@@ -431,6 +434,49 @@ fn install_in(
         record.source_commit
     ));
     Ok(record)
+}
+/// Moves bundles left under an app's former name (PrintCraft.app beside PdfCraft.app)
+/// to the Trash after the current bundle is installed, so one copy remains and the
+/// old one stays recoverable. Links and bundles of other apps are never touched.
+fn retire_legacy_bundles(app: &str, folder: &Path, trash: &Path, job: &Job) {
+    let current = crate::model::executable_name(app);
+    for name in crate::model::executable_names(app) {
+        let legacy = folder.join(&name);
+        if name == current || !owned_bundle(&legacy, app) {
+            continue;
+        }
+        let result = (|| -> Result<PathBuf> {
+            fs::create_dir_all(trash)?;
+            let mut to = trash.join(&name);
+            if fs::symlink_metadata(&to).is_ok() {
+                let stem = name.trim_end_matches(".app");
+                to = trash.join(format!(
+                    "{stem} {}.app",
+                    &uuid::Uuid::new_v4().simple().to_string()[..8]
+                ));
+            }
+            fs::rename(&legacy, &to)?;
+            Ok(to)
+        })();
+        match result {
+            Ok(to) => job.log(&format!(
+                "Moved the old {name} to the Trash: {}",
+                to.display()
+            )),
+            Err(e) => job.log(&format!(
+                "Could not move the old {name} to the Trash: {e:#}"
+            )),
+        }
+    }
+}
+fn owned_bundle(bundle: &Path, app: &str) -> bool {
+    let real = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| !m.file_type().is_symlink());
+    real(bundle)
+        && bundle.is_dir()
+        && real(&bundle.join("Contents"))
+        && real(&bundle.join("Contents/Info.plist"))
+        && platform::bundle_value(bundle, "CFBundleIdentifier")
+            .is_some_and(|id| identities(app).contains(&id))
 }
 pub fn restore(paths: &Paths, app: &str, backup: &Path, job: &Job) -> Result<()> {
     files::inside(backup, &paths.at("backups/releases"))?;
@@ -740,6 +786,43 @@ pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn legacy_printcraft_bundle_moves_to_trash_but_unrelated_and_linked_bundles_stay() {
+        let root = std::env::temp_dir().join(format!("craft-legacy-{}", uuid::Uuid::new_v4()));
+        let folder = root.join("Applications");
+        let trash = root.join("Trash");
+        let bundle = |name: &str, id: &str| {
+            let contents = folder.join(name).join("Contents");
+            fs::create_dir_all(&contents).unwrap();
+            fs::write(
+                contents.join("Info.plist"),
+                format!(r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>{id}</string></dict></plist>"#),
+            )
+            .unwrap();
+        };
+        let id = identities("printcraft").remove(0);
+        bundle("PdfCraft.app", &id);
+        bundle("PrintCraft.app", &id);
+        let job = Job::new(root.join("job.log"), &Default::default());
+        retire_legacy_bundles("printcraft", &folder, &trash, &job);
+        assert!(folder.join("PdfCraft.app").exists());
+        assert!(!folder.join("PrintCraft.app").exists());
+        assert!(trash.join("PrintCraft.app/Contents/Info.plist").exists());
+        // A second legacy copy gets a unique Trash name instead of overwriting.
+        bundle("PrintCraft.app", &id);
+        retire_legacy_bundles("printcraft", &folder, &trash, &job);
+        assert_eq!(fs::read_dir(&trash).unwrap().count(), 2);
+        // Another app's bundle under the old name, and links, are left alone.
+        bundle("PrintCraft.app", "com.example.other");
+        retire_legacy_bundles("printcraft", &folder, &trash, &job);
+        assert!(folder.join("PrintCraft.app").exists());
+        fs::remove_dir_all(folder.join("PrintCraft.app")).unwrap();
+        std::os::unix::fs::symlink(trash.join("PrintCraft.app"), folder.join("PrintCraft.app"))
+            .unwrap();
+        retire_legacy_bundles("printcraft", &folder, &trash, &job);
+        assert!(files::linked(&folder.join("PrintCraft.app")).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn copied_bundles_drop_finder_info_that_strict_signing_rejects() {
         let root = std::env::temp_dir().join(format!("craft-xattr-{}", uuid::Uuid::new_v4()));
         let from = root.join("From.app/Contents/Resources");
@@ -893,6 +976,7 @@ mod tests {
                 draft: false,
                 prerelease: false,
                 assets: vec![asset.clone()],
+                body: None,
             };
             assert_eq!(
                 release_asset(Some(&release), app, &prefs)

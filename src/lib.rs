@@ -5,6 +5,7 @@ compile_error!("Craft Library supports macOS only");
 pub mod apps;
 pub mod backups;
 pub mod builder;
+pub mod dock;
 pub mod files;
 pub mod hourly;
 pub mod installers;

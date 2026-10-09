@@ -112,22 +112,35 @@ pub fn bundle_value(bundle: &Path, key: &str) -> Option<String> {
 pub fn executable_version(bundle: &Path) -> Option<String> {
     bundle_value(bundle, "CFBundleShortVersionString")
 }
-pub fn running_app(name: &str) -> Result<bool> {
+fn processes() -> Result<String> {
     let out = Command::new("/bin/ps")
         .args(["-axww", "-o", "comm="])
         .output()?;
     if !out.status.success() {
         bail!("Could not list running processes");
     }
-    let processes = String::from_utf8_lossy(&out.stdout);
+    Ok(String::from_utf8_lossy(&out.stdout).to_lowercase())
+}
+fn running_in(processes: &str, name: &str) -> bool {
     let bundles: Vec<_> = crate::model::executable_names(name)
         .into_iter()
-        .map(|bundle| format!("/{}/Contents/MacOS/", bundle.to_lowercase()))
+        .map(|bundle| format!("/{}/contents/macos/", bundle.to_lowercase()))
         .collect();
-    Ok(processes
+    processes
         .lines()
-        .map(str::to_lowercase)
-        .any(|line| bundles.iter().any(|bundle| line.contains(bundle))))
+        .any(|line| bundles.iter().any(|bundle| line.contains(bundle)))
+}
+pub fn running_app(name: &str) -> Result<bool> {
+    Ok(running_in(&processes()?, name))
+}
+/// The apps among `names` that have a running process, from a single process listing.
+pub fn running_apps<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<Vec<String>> {
+    let processes = processes()?;
+    Ok(names
+        .into_iter()
+        .filter(|name| running_in(&processes, name))
+        .map(str::to_owned)
+        .collect())
 }
 pub fn notify(_: &Path, message: &str) -> Result<()> {
     // Pass the message as an argument so it is never parsed as AppleScript.
@@ -153,4 +166,19 @@ pub fn escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+#[cfg(test)]
+mod running_tests {
+    use super::*;
+    #[test]
+    fn running_detection_matches_bundle_paths_case_insensitively() {
+        let listing = "/Applications/LightCraft.app/Contents/MacOS/LightCraft\n/Applications/PrintCraft.app/Contents/MacOS/PrintCraft\n/usr/sbin/cfprefsd\n".to_lowercase();
+        assert!(running_in(&listing, "lightcraft"));
+        // The PdfCraft entry is also found under its former bundle name.
+        assert!(running_in(&listing, "printcraft"));
+        assert!(!running_in(&listing, "photocraft"));
+        // A document named like an app is not a running bundle.
+        assert!(!running_in("/users/me/lightcraft.app.txt\n", "lightcraft"));
+    }
 }

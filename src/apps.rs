@@ -55,14 +55,19 @@ pub fn executables(paths: &Paths, app: &str) -> Result<Vec<String>> {
 pub fn launch(paths: &Paths, app: &str) -> Result<()> {
     let installed = installed(paths, app)?;
     let settings = settings(paths, app)?;
-    let executable = if settings.executable.is_empty() {
+    let available = executables(paths, app)?;
+    // A saved bundle that was renamed away (PrintCraft.app → PdfCraft.app) falls back to
+    // the current bundle; any other missing choice is reported.
+    let renamed = !available.contains(&settings.executable)
+        && crate::model::executable_names(app).contains(&settings.executable);
+    let executable = if settings.executable.is_empty() || renamed {
         crate::model::installed_executable(&PathBuf::from(&installed.path), app)
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
             .context("App executable is missing")?
     } else {
         settings.executable
     };
-    if !executables(paths, app)?.contains(&executable) {
+    if !available.contains(&executable) {
         bail!("Selected executable is missing. Check launch settings.");
     }
     let root = PathBuf::from(installed.path);

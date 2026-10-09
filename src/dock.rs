@@ -1,4 +1,5 @@
-//! Native macOS pieces: Dock icon menu and badge, and the folder picker. Main thread only.
+//! Native macOS pieces: Dock menu and badge, menu bar menu, login item and folder picker.
+//! Main thread only.
 use std::{
     ffi::{c_char, CStr, CString},
     sync::OnceLock,
@@ -88,4 +89,29 @@ pub fn choose_folder(message: &str, initial: &std::path::Path) -> Option<std::pa
         .into_owned();
     unsafe { libc::free(chosen.cast()) };
     Some(path.into())
+}
+
+extern "C" {
+    fn craft_status_set(on: bool);
+    fn craft_login_enabled() -> bool;
+    fn craft_login_set(on: bool) -> *mut c_char;
+}
+/// Shows or hides the Craft Library menu in the menu bar.
+pub fn set_menu_bar(on: bool) {
+    unsafe { craft_status_set(on) }
+}
+/// Whether Craft Library opens when you log in.
+pub fn login_enabled() -> bool {
+    unsafe { craft_login_enabled() }
+}
+pub fn set_login(on: bool) -> anyhow::Result<()> {
+    let error = unsafe { craft_login_set(on) };
+    if error.is_null() {
+        return Ok(());
+    }
+    let message = unsafe { CStr::from_ptr(error) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { libc::free(error.cast()) };
+    anyhow::bail!(message)
 }

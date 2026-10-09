@@ -92,6 +92,10 @@ pub struct Preferences {
     pub install_folder: String,
     /// App folders chosen before, still searched so apps left there stay visible.
     pub previous_install_folders: Vec<String>,
+    /// Install updates found by scheduled or startup checks, for apps that are closed.
+    pub auto_update_apps: bool,
+    /// Show the Craft Library menu in the menu bar.
+    pub menu_bar_icon: bool,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -111,6 +115,8 @@ impl Default for Preferences {
             check_installed_apps_on_startup: false,
             install_folder: String::new(),
             previous_install_folders: Vec::new(),
+            auto_update_apps: false,
+            menu_bar_icon: false,
         }
     }
 }

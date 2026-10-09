@@ -12,6 +12,42 @@ use std::{
     process::Command,
 };
 
+/// Space used by each part of the library, largest first. Links are not followed.
+pub fn usage(paths: &Paths) -> Vec<(&'static str, u64)> {
+    let mut parts: Vec<_> = [
+        "workspace",
+        "builds",
+        "backups",
+        "releases",
+        "sources",
+        "logs",
+    ]
+    .into_iter()
+    .map(|name| (name, size(&paths.at(name))))
+    .collect();
+    parts.sort_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
+    parts
+}
+fn size(folder: &Path) -> u64 {
+    walkdir::WalkDir::new(folder)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+/// Deletes downloaded installers. They are fetched again when needed.
+pub fn clear_downloads(paths: &Paths) -> Result<()> {
+    let _lock = platform::Lock::take("Local\\CraftAppsManager")?;
+    let releases = paths.at("releases");
+    for folder in [releases.join("installers"), paths.at("runtime/downloads")] {
+        crate::files::remove_managed(&folder, &paths.root)?;
+    }
+    Ok(())
+}
+
 /// Lives in the default library folder and points at the real one, so it never moves.
 const POINTER: &str = "data-root.json";
 

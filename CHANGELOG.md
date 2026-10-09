@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6
+
+- Right-click an app for Open, Update, Show in Finder, Move, Check for update and Uninstall.
+- Move between apps with the arrow keys and open the selected one with Return.
+- Craft Library remembers its window size and position.
+- Settings is split into General, Updates, Folders, Storage and Builds.
+- Storage shows how much space build caches, builds, backups, downloads, sources and logs use, with buttons to clean them up.
+- Optional automatic app updates after scheduled or startup checks, for apps that aren't open.
+- Optional menu bar icon that lists your apps and waiting updates.
+- Open Craft Library at login.
+- Activity is now a history of what was installed, updated, moved and built, with the raw log underneath.
+- Notifications say Craft Library instead of Craft Apps Manager.
+
 ## 0.1.5
 
 - Choose where apps install. Pick another folder in Settings, and Craft Library offers to move the apps you already have there. Single apps can be moved from their details.

@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use craft_apps_manager::{
-    apps, backups, builder, dock, files,
+    activity, apps, backups, builder, dock, files,
     jobs::Job,
     library, macos_build,
     model::{self, BuilderPreferences, Paths, Preferences, APPS},
@@ -28,6 +28,16 @@ use tao::{
 #[serde(default)]
 struct Appearance {
     theme: String,
+    window: Option<Frame>,
+}
+/// Window position and size in points, restored on the next launch.
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+struct Frame {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    maximized: bool,
 }
 #[derive(Debug)]
 enum UiEvent {
@@ -35,6 +45,8 @@ enum UiEvent {
     Snapshot(Value),
     Feedback(String),
     Running(Vec<String>),
+    /// A ready-made message for the page.
+    Emit(Value),
 }
 fn post(proxy: &EventLoopProxy<UiEvent>, event: UiEvent) {
     let _ = proxy.send_event(event);
@@ -185,7 +197,7 @@ fn snapshot(paths: &Paths) -> Result<Value> {
         .collect();
     let launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
     Ok(
-        json!({"apps":config.apps,"updates":updates,"launches":launches,"library":paths.root,"defaultLibrary":model::Locations::home()?,"installFolder":paths.install_folder()?,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"apps":config.apps,"updates":updates,"launches":launches,"activity":activity::read(paths).unwrap_or_default(),"startAtLogin":dock::login_enabled(),"library":paths.root,"defaultLibrary":model::Locations::home()?,"installFolder":paths.install_folder()?,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
     )
 }
 const LAUNCHES: &str = "runtime/launches.json";
@@ -210,12 +222,32 @@ fn theme(paths: &Paths, value: &str) -> Result<()> {
     if !["dark", "light"].contains(&value) {
         bail!("Unknown appearance");
     }
-    files::write_json(
-        &paths.at("ui-settings.json"),
-        &Appearance {
-            theme: value.into(),
+    let file = paths.at("ui-settings.json");
+    let mut appearance: Appearance = files::read_or_default(&file)?;
+    appearance.theme = value.into();
+    files::write_json(&file, &appearance)
+}
+/// Remembers where the window was, for the next launch.
+fn save_frame(paths: &Paths, window: &tao::window::Window) {
+    let scale = window.scale_factor();
+    let (Ok(position), size) = (window.outer_position(), window.inner_size()) else {
+        return;
+    };
+    let file = paths.at("ui-settings.json");
+    let mut appearance: Appearance = files::read_or_default(&file).unwrap_or_default();
+    let maximized = window.is_maximized();
+    let previous = appearance.window.filter(|_| maximized);
+    appearance.window = Some(previous.map_or(
+        Frame {
+            x: f64::from(position.x) / scale,
+            y: f64::from(position.y) / scale,
+            width: f64::from(size.width) / scale,
+            height: f64::from(size.height) / scale,
+            maximized,
         },
-    )
+        |f| Frame { maximized, ..f },
+    ));
+    let _ = files::write_json(&file, &appearance);
 }
 fn save_settings(paths: &Paths, value: &Value) -> Result<()> {
     let mut prefs: Preferences = serde_json::from_value(value["preferences"].clone())?;
@@ -347,6 +379,21 @@ fn operation(
         }
         "fetch-sources" => updates::sources(paths, &paths.preferences()?.selected_sources, job),
         "move-app" => macos_build::move_app(paths, app, job).map(|_| ()),
+        "clean-builds" => {
+            builder::clean(paths)?;
+            job.log("Deleted build caches and extracted source");
+            Ok(())
+        }
+        "clear-backups" => {
+            backups::clear(paths)?;
+            job.log("Deleted app and source backups");
+            Ok(())
+        }
+        "clear-downloads" => {
+            library::clear_downloads(paths)?;
+            job.log("Deleted downloaded installers");
+            Ok(())
+        }
         "move-apps" => macos_build::move_apps(paths, job),
         "move-library" => {
             let to = value["path"].as_str().context("Missing folder")?;
@@ -404,22 +451,46 @@ pub fn run(paths: Paths) -> Result<()> {
     let proxy = event_loop.create_proxy();
     let pixels = image::load_from_memory(include_bytes!("../assets/icon.png"))?.into_rgba8();
     let icon = Icon::from_rgba(pixels.clone().into_raw(), pixels.width(), pixels.height())?;
-    let window = WindowBuilder::new()
+    let appearance: Appearance = files::read_or_default(&paths.at("ui-settings.json"))?;
+    // Only reuse a saved position that still lands on a connected display.
+    let frame = appearance.window.filter(|f| {
+        f.width >= 980.0
+            && f.height >= 660.0
+            && event_loop.available_monitors().any(|m| {
+                let scale = m.scale_factor();
+                let (p, s) = (m.position(), m.size());
+                let (left, top) = (f64::from(p.x) / scale, f64::from(p.y) / scale);
+                let (right, bottom) = (
+                    left + f64::from(s.width) / scale,
+                    top + f64::from(s.height) / scale,
+                );
+                f.x + 100.0 < right
+                    && f.x + f.width - 100.0 > left
+                    && f.y >= top - 1.0
+                    && f.y + 40.0 < bottom
+            })
+    });
+    let mut builder = WindowBuilder::new();
+    if let Some(f) = frame {
+        builder = builder
+            .with_position(tao::dpi::LogicalPosition::new(f.x, f.y))
+            .with_maximized(f.maximized);
+    }
+    let window = builder
         .with_title("Craft Library")
         .with_decorations(true)
         .with_titlebar_transparent(true)
         .with_title_hidden(true)
         .with_fullsize_content_view(true)
         .with_traffic_light_inset(tao::dpi::LogicalPosition::new(14.0, 16.0))
-        .with_theme(Some(
-            if files::read_or_default::<Appearance>(&paths.at("ui-settings.json"))?.theme == "light"
-            {
-                Theme::Light
-            } else {
-                Theme::Dark
-            },
-        ))
-        .with_inner_size(LogicalSize::new(1240.0, 840.0))
+        .with_theme(Some(if appearance.theme == "light" {
+            Theme::Light
+        } else {
+            Theme::Dark
+        }))
+        .with_inner_size(frame.map_or(LogicalSize::new(1240.0, 840.0), |f| {
+            LogicalSize::new(f.width, f.height)
+        }))
         .with_min_inner_size(LogicalSize::new(980.0, 660.0))
         .with_window_icon(Some(icon))
         .build(&event_loop)?;
@@ -454,6 +525,7 @@ pub fn run(paths: Paths) -> Result<()> {
     let mut last_poll = Instant::now();
     let mut was_busy = false;
     let mut restart_after_job = false;
+    let mut current = (String::new(), String::new());
     let mut closing = false;
     let mut startup_pending = true;
     let mut running: Vec<String> = Vec::new();
@@ -484,10 +556,16 @@ pub fn run(paths: Paths) -> Result<()> {
                 }
             },
             Event::UserEvent(UiEvent::Feedback(message)) => emit(&web, json!({"type":"feedback","message":message})),
+            Event::UserEvent(UiEvent::Emit(value)) => emit(&web, value),
+            Event::LoopDestroyed => save_frame(&paths, &window),
             Event::UserEvent(UiEvent::Running(apps)) => if apps != running { emit(&web, json!({"type":"running","apps":apps})); running = apps; },
             Event::NewEvents(tao::event::StartCause::Init) => {
                 let launcher = std::sync::Mutex::new(proxy.clone());
-                dock::start(move |app| { if let Ok(proxy) = launcher.lock() { post(&proxy, UiEvent::Message(json!({"action":"launch","app":app}))); } });
+                dock::start(move |app| {
+                    let message = if app == "__show" { json!({"action":"show-window"}) } else { json!({"action":"launch","app":app}) };
+                    if let Ok(proxy) = launcher.lock() { post(&proxy, UiEvent::Message(message)); }
+                });
+                dock::set_menu_bar(paths.preferences().is_ok_and(|p| p.menu_bar_icon));
             },
             Event::UserEvent(UiEvent::Message(value)) => {
                 let result = (|| -> Result<()> {
@@ -499,6 +577,15 @@ pub fn run(paths: Paths) -> Result<()> {
                         "maximize" => { window.set_maximized(!window.is_maximized()); return Ok(()); },
                         "close" => { if job.state.lock().unwrap().busy { closing = true; job.cancel.store(true, Ordering::Relaxed); } else { *flow = ControlFlow::Exit; } return Ok(()); },
                         "cancel" => { job.cancel.store(true, Ordering::Relaxed); return Ok(()); },
+                        "show-window" => { window.set_visible(true); window.set_minimized(false); window.set_focus(); return Ok(()); },
+                        "disk-usage" => {
+                            let p = paths.clone(); let tx = proxy.clone();
+                            std::thread::spawn(move || {
+                                let parts: Vec<_> = library::usage(&p).into_iter().map(|(name, bytes)| json!({"name":name,"bytes":bytes})).collect();
+                                post(&tx, UiEvent::Emit(json!({"type":"disk-usage","parts":parts})));
+                            });
+                            return Ok(());
+                        },
                         "theme" => { let selected_theme = value["theme"].as_str().context("Missing theme")?;
                             theme(&paths, selected_theme)?;
                             window.set_theme(Some(if selected_theme == "light" { Theme::Light } else { Theme::Dark })); return Ok(()); },
@@ -522,7 +609,13 @@ pub fn run(paths: Paths) -> Result<()> {
                         _ => {},
                     }
                     if job.state.lock().unwrap().busy { bail!("Wait for the current operation to finish"); }
-                    if action == "settings" { save_settings(&paths, &value)?; refresh(&paths, &proxy); return Ok(()); }
+                    if action == "settings" {
+                        save_settings(&paths, &value)?;
+                        dock::set_menu_bar(paths.preferences()?.menu_bar_icon);
+                        if let Some(on) = value["startAtLogin"].as_bool() { if on != dock::login_enabled() { dock::set_login(on)?; } }
+                        refresh(&paths, &proxy);
+                        return Ok(());
+                    }
                     if action == "use-library" { library::use_library(Path::new(value["path"].as_str().context("Missing folder")?))?; relaunch()?; *flow = ControlFlow::Exit; return Ok(()); }
                     let app = value["app"].as_str().context("Missing app")?.to_owned(); model::valid_app(&app)?;
                     match action {
@@ -536,12 +629,13 @@ pub fn run(paths: Paths) -> Result<()> {
                         "save-build-launch-settings" => { let mut settings = builder::launch_options(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); builder::save_launch_options(&paths,&app,&settings)?; return Ok(()); },
                         "release-notes" => return platform::open(Path::new(&format!("https://github.com/storytold/{}/releases/latest", model::repository(&app)))),
                         "save-launch-settings" => { let mut settings = apps::settings(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); apps::save(&paths,&app,&settings)?; return Ok(()); },
-                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "move-app" | "move-apps" | "move-library" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
+                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "move-app" | "move-apps" | "move-library" | "clean-builds" | "clear-backups" | "clear-downloads" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
                         _ => bail!("Unknown action"),
                     }
                     // The library's own logs move with it, so its move logs to the temporary folder.
                     job = Job::new(if action == "move-library" { std::env::temp_dir().join("craft-library-move.log") } else { paths.at(format!("logs/{app}.log")) }, &paths.builder_preferences()?);
                     restart_after_job = action == "move-library";
+                    current = (action.to_owned(), app.clone());
                     let p = paths.clone(); let tx = proxy.clone();
                     self_update::set_busy(true);
                     job.spawn(move |job| operation(&p, &app, &value, &job, &tx));
@@ -554,6 +648,13 @@ pub fn run(paths: Paths) -> Result<()> {
                 let value = json!({"type":"job","data":{"busy":state.busy,"stage":state.stage,"detail":state.detail,"progress":state.progress,"log":state.log,"outcome":state.outcome}});
                 let encoded = value.to_string(); if encoded != last_job { emit(&web,value); last_job = encoded; }
                 if was_busy && !state.busy {
+                    // Quick lookups that found nothing stay out of the history.
+                    if !["check-release", "check-source"].contains(&current.0.as_str()) || state.stage != "Complete" {
+                        let entry = activity::Entry { time: chrono::Utc::now().timestamp(), action: current.0.clone(), app: current.1.clone(), stage: state.stage.clone(), lines: activity::summary(&state.log), error: if state.stage == "Failed" { state.outcome.clone() } else { String::new() } };
+                        // After a library move, the history file lives in the new library.
+                        let target = if current.0 == "move-library" && state.stage == "Complete" { None } else { Some(&paths) };
+                        if let Some(target) = target { if let Err(e) = activity::record(target, entry) { post(&proxy, UiEvent::Feedback(format!("Could not save activity: {e:#}"))); } }
+                    }
                     if restart_after_job && state.outcome == "Success" {
                         if let Err(e) = relaunch() { post(&proxy, UiEvent::Feedback(format!("Restart Craft Library to finish: {e:#}"))); } else { *flow = ControlFlow::Exit; }
                     } else {

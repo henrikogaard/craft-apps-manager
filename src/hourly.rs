@@ -27,20 +27,80 @@ pub fn read(paths: &Paths) -> Result<Checks> {
     files::read_or_default(&paths.at("runtime/app-update-checks.json"))
 }
 pub fn run(paths: &Paths, job: &Job) -> Result<()> {
-    let _lock = platform::Lock::take("Local\\CraftAppsManagerHourlyChecks")?;
     let prefs = paths.preferences()?;
-    let config = paths.config()?;
-    let mut checks = read(paths)?;
-    job.log("Hourly app availability check (no downloads or installation)");
-    scan(
-        &config,
-        &prefs,
-        &mut checks,
-        job,
-        |name| updates::check_app(paths, name),
-        |message| platform::notify(&std::env::current_exe()?, message),
-    )?;
-    files::write_json(&paths.at("runtime/app-update-checks.json"), &checks)
+    {
+        let _lock = platform::Lock::take("Local\\CraftAppsManagerHourlyChecks")?;
+        let config = paths.config()?;
+        let mut checks = read(paths)?;
+        job.log("Scheduled app update check");
+        // With automatic updates, the install below replaces the "available" notification.
+        let notify = !prefs.auto_update_apps;
+        scan(
+            &config,
+            &prefs,
+            &mut checks,
+            job,
+            |name| updates::check_app(paths, name),
+            |message| {
+                if notify {
+                    platform::notify(&std::env::current_exe()?, message)?;
+                }
+                Ok(())
+            },
+        )?;
+        files::write_json(&paths.at("runtime/app-update-checks.json"), &checks)?;
+    }
+    if prefs.auto_update_apps {
+        auto_update(paths, &prefs, job)?;
+    }
+    Ok(())
+}
+/// Installs the updates the last check found, skipping apps that are open.
+fn auto_update(paths: &Paths, prefs: &Preferences, job: &Job) -> Result<()> {
+    let checks = read(paths)?;
+    let mut lines = Vec::new();
+    for app in updates::installed_check_targets(&paths.config()?) {
+        let Some(latest) = checks
+            .get(&key(prefs, &app.name))
+            .filter(|c| c.installed == app.version)
+            .and_then(|c| c.latest.clone())
+        else {
+            continue;
+        };
+        let title = crate::model::title(&app.name);
+        if platform::running_app(&app.name).unwrap_or(true) {
+            job.log(&format!(
+                "{title} is open; its update waits until it is closed"
+            ));
+            continue;
+        }
+        job.check()?;
+        match crate::macos_build::install_latest(paths, &app.name, job) {
+            Ok(()) => {
+                lines.push(format!("Installed {title} {latest}"));
+                if let Err(e) = platform::notify(
+                    &std::env::current_exe()?,
+                    &format!("{title} was updated to {latest}."),
+                ) {
+                    job.log(&format!("Notification warning: {e:#}"));
+                }
+            }
+            Err(e) => job.log(&format!("{}: automatic update failed: {e:#}", app.name)),
+        }
+    }
+    if !lines.is_empty() {
+        crate::activity::record(
+            paths,
+            crate::activity::Entry {
+                time: chrono::Utc::now().timestamp(),
+                action: "auto-update".into(),
+                stage: "Complete".into(),
+                lines,
+                ..Default::default()
+            },
+        )?;
+    }
+    Ok(())
 }
 fn store(
     checks: &mut Checks,
@@ -217,7 +277,7 @@ fn scan(
                     job.log(&format!("{}: update available ({version})", app.name));
                     if prefs.notify_updates && state.notified.as_deref() != Some(&version) {
                         let message = format!(
-                            "{} {version} is available. Open Craft Apps Manager to install it.",
+                            "{} {version} is available. Open Craft Library to install it.",
                             crate::model::title(&app.name)
                         );
                         match notify(&message) {

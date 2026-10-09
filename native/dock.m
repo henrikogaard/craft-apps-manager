@@ -5,6 +5,7 @@
 extern void craft_dock_launch(const char *app);
 
 static NSMenu *dockMenu;
+static void rebuildStatusMenu(void);
 
 @interface CraftDockTarget : NSObject
 - (void)launch:(NSMenuItem *)item;
@@ -49,8 +50,58 @@ void craft_dock_set_apps(const char *const *ids, const char *const *titles,
         }
         [dockMenu addItem:item];
     }
+    rebuildStatusMenu();
+}
+
+// The menu bar menu repeats the Dock menu, with the update count and a way back to the window.
+static NSStatusItem *statusItem;
+static NSMenu *statusMenu;
+static NSString *badge;
+
+static NSMenuItem *menuItem(NSString *title, NSString *app) {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(launch:) keyEquivalent:@""];
+    item.target = dockTarget;
+    item.representedObject = app;
+    return item;
+}
+static void rebuildStatusMenu(void) {
+    if (!statusMenu) {
+        statusMenu = [NSMenu new];
+        statusMenu.autoenablesItems = NO;
+    }
+    [statusMenu removeAllItems];
+    if (badge.length) {
+        NSString *title = [badge isEqualToString:@"1"] ? @"1 update available" : [NSString stringWithFormat:@"%@ updates available", badge];
+        [statusMenu addItem:menuItem(title, @"__show")];
+        [statusMenu addItem:[NSMenuItem separatorItem]];
+    }
+    for (NSMenuItem *app in dockMenu.itemArray) {
+        NSMenuItem *copy = menuItem(app.title, app.representedObject);
+        copy.image = app.image;
+        [statusMenu addItem:copy];
+    }
+    if (dockMenu.numberOfItems) [statusMenu addItem:[NSMenuItem separatorItem]];
+    [statusMenu addItem:menuItem(@"Open Craft Library", @"__show")];
 }
 
 void craft_dock_set_badge(const char *label) {
-    NSApp.dockTile.badgeLabel = (label && *label) ? @(label) : nil;
+    badge = (label && *label) ? @(label) : nil;
+    NSApp.dockTile.badgeLabel = badge;
+    rebuildStatusMenu();
+}
+
+void craft_status_set(bool on) {
+    if (on && !statusItem) {
+        if (!dockTarget) dockTarget = [CraftDockTarget new];
+        rebuildStatusMenu();
+        statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
+        NSImage *image = [NSImage imageWithSystemSymbolName:@"square.grid.2x2" accessibilityDescription:@"Craft Library"];
+        image.template = YES;
+        statusItem.button.image = image;
+        statusItem.button.toolTip = @"Craft Library";
+        statusItem.menu = statusMenu;
+    } else if (!on && statusItem) {
+        [NSStatusBar.systemStatusBar removeStatusItem:statusItem];
+        statusItem = nil;
+    }
 }

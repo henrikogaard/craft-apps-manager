@@ -13,11 +13,13 @@ Download the DMG from [releases](https://github.com/henrikogaard/craft-apps-mana
 ## What it does
 
 - Installs the official Mac release of each app. If an app has no Mac release yet, it builds one from the official source instead.
-- Shows the version you have next to the latest one, with the release notes. Check all looks for updates, Update all installs them.
-- Opens apps. Double-click a card, press ⌘1 to ⌘9 for the apps in the sidebar, or press ⌘K, type a name and hit Return. You can also right-click the Dock icon and pick an app from there.
+- Shows the version you have next to the latest one, with the release notes. Check all looks for updates, Update all installs them. It can also install updates on its own, for apps that aren't open.
+- Opens apps. Double-click a card, use the arrow keys and Return, press ⌘1 to ⌘9 for the apps in the sidebar, or press ⌘K, type a name and hit Return. Right-click an app for the rest. The Dock icon and an optional menu bar icon list your apps too.
 - Shows which apps are running, and puts the number of waiting updates on the Dock icon.
 - Can keep the previous version when it updates an app, so you can roll back.
 - Builds apps from source and lets you open a build without installing it.
+- Shows what's using space in the library, and cleans up build caches, backups and downloads.
+- Keeps a history of what it installed, updated and built, under Activity.
 
 Everything comes from the official `storytold/<app>` repositories. A failed checksum, signature or Gatekeeper check stops the install. It never falls back to a source build to get around that.
 

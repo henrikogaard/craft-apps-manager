@@ -149,7 +149,7 @@ pub fn notify(_: &Path, message: &str) -> Result<()> {
             "-e",
             "on run argv",
             "-e",
-            "display notification (item 1 of argv) with title \"Craft Apps Manager\" subtitle \"Craft updates available\"",
+            "display notification (item 1 of argv) with title \"Craft Library\"",
             "-e",
             "end run",
             message,

@@ -76,6 +76,21 @@ impl Drop for ProcessGroup {
         }
     }
 }
+/// Removes extended attributes from a copied bundle. `ditto --noextattr` keeps
+/// non-empty Finder info, which strict signature checks reject.
+pub fn clear_attributes(path: &Path) -> Result<()> {
+    let out = Command::new("/usr/bin/xattr")
+        .arg("-cr")
+        .arg(path)
+        .output()?;
+    if !out.status.success() {
+        bail!(
+            "Could not clear file attributes: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
 pub fn open(path: &Path) -> Result<()> {
     let status = Command::new("/usr/bin/open").arg(path).status()?;
     if !status.success() {

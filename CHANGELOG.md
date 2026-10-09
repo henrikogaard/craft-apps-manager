@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Fix updates failing with “Invalid app signature” when the installed app carries Finder info. Copied bundles now drop all extended attributes before the strict signature check.
+- Show why a signature check failed in the activity log.
+- Show an updated app as current right after Update or Update all.
+
 ## 0.1.1
 
 - Ship a signed and notarized DMG with an Applications shortcut instead of a ZIP.

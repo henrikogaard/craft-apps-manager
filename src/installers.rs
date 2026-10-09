@@ -151,6 +151,7 @@ pub fn extract_app(image: &Path, stage: &Path, app: &str, job: &Job) -> Result<P
     if !status.success() {
         bail!("Could not copy {name} from the disk image");
     }
+    crate::platform::clear_attributes(&staged)?;
     job.stage("Verifying", None, "Checking the app signature");
     verify_signature(&staged)?;
     Ok(staged)

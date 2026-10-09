@@ -287,16 +287,20 @@ fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
     if !s.success() {
         bail!("Could not copy bundle");
     }
-    Ok(())
+    platform::clear_attributes(to)
 }
 fn verify(bundle: &Path, app: &str) -> Result<()> {
     inspect(bundle, app)?;
-    let s = Command::new("codesign")
+    let out = Command::new("codesign")
         .args(["--verify", "--deep", "--strict"])
         .arg(bundle)
-        .status()?;
-    if !s.success() {
-        bail!("Invalid app signature");
+        .output()?;
+    if !out.status.success() {
+        let reason = String::from_utf8_lossy(&out.stderr);
+        bail!(
+            "Invalid app signature: {}",
+            reason.lines().next().unwrap_or_default().trim()
+        );
     }
     Ok(())
 }
@@ -669,7 +673,11 @@ pub fn install_latest(paths: &Paths, app: &str, job: &Job) -> Result<()> {
         } else {
             network.asset(&asset, &image, job)?;
         }
-        install_release(paths, app, &image, job)?;
+        let installed = install_release(paths, app, &image, job)?;
+        // The new version is the latest release, so the library can show it as current.
+        if let Err(error) = crate::hourly::record(paths, app, &installed.version, None) {
+            job.log(&format!("Could not record the update check: {error:#}"));
+        }
         return Ok(());
     }
     job.log("No compatible official Mac release is available. Building the latest official source instead.");
@@ -731,6 +739,31 @@ pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn copied_bundles_drop_finder_info_that_strict_signing_rejects() {
+        let root = std::env::temp_dir().join(format!("craft-xattr-{}", uuid::Uuid::new_v4()));
+        let from = root.join("From.app/Contents/Resources");
+        fs::create_dir_all(&from).unwrap();
+        let file = from.join("icon.icns");
+        fs::write(&file, b"icon").unwrap();
+        // Non-empty Finder info, as Finder writes it; ditto --noextattr keeps this.
+        let info = format!("{:0<64}", "69636E7369636E73");
+        assert!(Command::new("/usr/bin/xattr")
+            .args(["-wx", "com.apple.FinderInfo", &info])
+            .arg(&file)
+            .status()
+            .unwrap()
+            .success());
+        let to = root.join("To.app");
+        copy_bundle(&root.join("From.app"), &to).unwrap();
+        let left = Command::new("/usr/bin/xattr")
+            .arg(to.join("Contents/Resources/icon.icns"))
+            .output()
+            .unwrap();
+        // macOS may keep its own com.apple.provenance tag; strict signing allows it.
+        assert!(!String::from_utf8_lossy(&left.stdout).contains("com.apple.FinderInfo"));
+        fs::remove_dir_all(root).unwrap();
+    }
     struct Fixture(PathBuf);
     impl Fixture {
         fn new() -> Self {

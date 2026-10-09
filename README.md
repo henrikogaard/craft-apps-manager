@@ -58,7 +58,7 @@ Open **Settings** at the bottom of the sidebar. The Folders section has both cho
 
 **Install apps in** picks where apps go. The default is Applications. Choose Another folder and pick one, or Inside the library to keep apps in the library's `releases` folder. When you pick a new folder, Craft Library offers to move the apps you already have. You can also move a single app from its details. Apps you leave behind keep working and keep updating where they are.
 
-**Library folder** moves the library, to an external drive for example. Pick a folder, then choose Move library to bring everything over (the folder has to be empty), or Use as it is if it already holds a library. Craft Library restarts when it's done.
+**Library folder** moves the library, to an external drive for example. Pick a folder, then choose Move library to bring everything over, or Use as it is if it already holds a library. Move library needs an empty folder. Craft Library restarts when it's done.
 
 The library location is saved in `data-root.json` in the default folder above, which never moves. Scripts can override it with `--root /some/folder`, and `--tools /some/folder` sets where build tools go.
 

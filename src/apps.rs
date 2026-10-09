@@ -79,6 +79,26 @@ pub fn launch(paths: &Paths, app: &str) -> Result<()> {
     command.args(settings.arguments).current_dir(root).spawn()?;
     Ok(())
 }
+/// Opens files or folders in an installed app, as dropping them on its icon would.
+pub fn open_files(paths: &Paths, app: &str, files: &[PathBuf]) -> Result<()> {
+    let installed = installed(paths, app)?;
+    let bundle = crate::model::installed_executable(&PathBuf::from(&installed.path), app)
+        .context("App executable is missing")?;
+    if files.is_empty() {
+        bail!("Nothing to open");
+    }
+    for file in files {
+        if !file.is_absolute() || !file.exists() {
+            bail!("{} can't be opened", file.display());
+        }
+    }
+    Command::new("/usr/bin/open")
+        .arg("-a")
+        .arg(bundle)
+        .args(files)
+        .spawn()?;
+    Ok(())
+}
 pub fn uninstall(paths: &Paths, app: &str) -> Result<()> {
     crate::model::valid_app(app)?;
     let _lock = platform::Lock::take("Local\\CraftAppsManager")?;

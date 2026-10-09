@@ -3,17 +3,20 @@ fn main() {
     println!("cargo:rerun-if-changed=native/dock.m");
     println!("cargo:rerun-if-changed=native/folder.m");
     println!("cargo:rerun-if-changed=native/login.m");
+    println!("cargo:rerun-if-changed=native/hotkey.m");
     cc::Build::new()
         .file("native/sparkle.m")
         .file("native/dock.m")
         .file("native/folder.m")
         .file("native/login.m")
+        .file("native/hotkey.m")
         .flag("-fobjc-arc")
         .flag("-fblocks")
         .compile("craft_sparkle");
     println!("cargo:rustc-link-lib=framework=Foundation");
     println!("cargo:rustc-link-lib=framework=AppKit");
     println!("cargo:rustc-link-lib=framework=ServiceManagement");
+    println!("cargo:rustc-link-lib=framework=Carbon");
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=assets");

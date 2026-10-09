@@ -55,6 +55,10 @@
       * {
         box-sizing: border-box;
       }
+      /* Elements that set their own display still hide when [hidden] is set. */
+      [hidden] {
+        display: none !important;
+      }
       body {
         margin: 0;
         font:
@@ -292,6 +296,12 @@
       .side-app:hover .shortcut,
       .side-app:focus-within .shortcut {
         display: none;
+      }
+      .side-app.drop-before {
+        box-shadow: inset 0 2px 0 var(--accent);
+      }
+      .side-app.drop-after {
+        box-shadow: inset 0 -2px 0 var(--accent);
       }
       .update-dot {
         width: 6px;
@@ -803,6 +813,123 @@
         color: var(--ok);
         white-space: nowrap;
       }
+      .app-card.file-target,
+      .side-app.file-target {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .picker .app-card {
+        min-height: 130px;
+      }
+      .picker .app-card.picked {
+        border-color: var(--text);
+        background: var(--raised);
+      }
+      .pick-box {
+        margin-left: auto;
+        align-self: flex-start;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--subtle);
+        border-radius: 5px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .picked .pick-box {
+        background: var(--button);
+        border-color: var(--button);
+        color: var(--button-text);
+      }
+      .pick-box svg {
+        width: 12px;
+        height: 12px;
+        stroke-width: 2.4;
+      }
+      .picker-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 18px;
+      }
+      .picker-actions .primary {
+        padding: 10px 18px;
+      }
+      .palette-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: #0005;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding-top: 14vh;
+      }
+      .palette {
+        width: 560px;
+        max-width: 90vw;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .palette input {
+        width: 100%;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        font-size: 15px;
+        padding: 16px 18px;
+        outline: none;
+      }
+      #palette-list {
+        padding: 6px;
+      }
+      .palette-item {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 8px 10px;
+        border-radius: 7px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .palette-item.active {
+        background: var(--hover);
+      }
+      .palette-item img {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        filter: grayscale(1);
+      }
+      .palette-glyph {
+        width: 22px;
+        display: inline-flex;
+        justify-content: center;
+        color: var(--muted);
+      }
+      .palette-item span:nth-child(2) {
+        flex: 1;
+      }
+      .palette-empty {
+        padding: 14px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .app-data {
+        margin-top: 4px;
+        max-height: 150px;
+        overflow: auto;
+      }
+      .app-data ul {
+        margin: 6px 0 0;
+        padding-left: 16px;
+        font-family: ui-monospace, monospace;
+        line-height: 1.6;
+      }
       .ctx {
         position: fixed;
         z-index: 30;
@@ -1312,6 +1439,12 @@
     <div id="toast" role="alert"></div>
     <div id="modal-root"></div>
     <div id="ctx" class="ctx" role="menu" hidden></div>
+    <div id="palette" class="palette-backdrop" hidden onmousedown="if(event.target===this)closePalette()">
+      <section class="palette" role="dialog" aria-label="Command palette">
+        <input id="palette-input" type="text" placeholder="Open an app or run a command…" autocomplete="off" spellcheck="false" aria-label="Command" />
+        <div id="palette-list" role="listbox"></div>
+      </section>
+    </div>
     <script>
       const catalog = __CATALOG__;
       let state = {
@@ -1333,6 +1466,7 @@
         category = "all",
         managerAvailable = false,
         firstSnapshot = true,
+        picks = new Set(),
         showUpdates = false,
         running = new Set(),
         appFolderDraft = "",
@@ -1398,8 +1532,10 @@
       function check(id) {
         return installed(id) && (state.updates || {})[id];
       }
+      // A newer release the user hasn't chosen to skip.
       function newer(id) {
-        return check(id)?.latest || "";
+        const c = check(id);
+        return (!c?.skipped && c?.latest) || "";
       }
       function ago(seconds) {
         if (!seconds) return "";
@@ -1410,8 +1546,11 @@
         return `${Math.round(m / 60 / 24)} d ago`;
       }
       // Sidebar order stays fixed so ⌘1–⌘9 always open the same app.
+      // Sidebar order: the saved order (drag to change), so ⌘1–⌘9 stay put.
       function installedApps() {
-        return catalog.filter((a) => installed(a.id));
+        const order = state.preferences?.appOrder || [];
+        const rank = (id) => (order.includes(id) ? order.indexOf(id) : order.length + catalog.findIndex((a) => a.id === id));
+        return catalog.filter((a) => installed(a.id)).sort((x, y) => rank(x.id) - rank(y.id));
       }
       function recentFirst(list) {
         const at = (a) => (state.launches || {})[a.id] || 0;
@@ -1451,6 +1590,123 @@
           : `<p class="build-note">${esc(String(text).replace(/^#+\s*/gm, "").slice(0, 600))}</p>`;
         return `<details class="notes" open><summary>What’s new in ${esc(version)}</summary>${body}<button class="link" onclick="send('release-notes')">Full release notes on GitHub</button></details>`;
       }
+      let paletteItems = [],
+        paletteAt = 0;
+      function commands() {
+        const list = [];
+        for (const a of recentFirst(installedApps())) list.push([`Open ${a.name}`, a.icon, () => launch(a.id)]);
+        for (const a of installedApps()) {
+          if (newer(a.id)) list.push([`Update ${a.name} to ${newer(a.id)}`, a.icon, () => { choose(a.id); confirmAction("install-latest"); }]);
+        }
+        for (const a of catalog.filter((a) => !installed(a.id))) list.push([`Install ${a.name}`, a.icon, () => { choose(a.id); confirmAction("install-latest"); }]);
+        for (const a of installedApps()) list.push([`Show ${a.name} in Finder`, a.icon, () => { choose(a.id); send("open-app"); }]);
+        const updates = installedApps().filter((a) => newer(a.id)).length;
+        if (updates) list.push([`Update all (${updates})`, "", () => confirmUpdateAll()]);
+        list.push(
+          ["Check all apps for updates", "", () => send("check-updates")],
+          ["My apps", "", () => view("installed")],
+          ["All apps", "", () => view("all")],
+          ["Builds", "", () => view("builds")],
+          ["Activity", "", () => view("activity")],
+          ["Settings", "", () => settings()],
+          ["Storage", "", () => { settingsTab = "storage"; settings(); }],
+          ["Open library folder", "", () => send("open-library")],
+          [`Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} mode`, "", () => theme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")],
+        );
+        return list;
+      }
+      function openPalette() {
+        closeMenu();
+        if (document.querySelector(".modal")) return;
+        const box = document.getElementById("palette");
+        box.hidden = false;
+        const input = document.getElementById("palette-input");
+        input.value = "";
+        filterPalette();
+        input.focus();
+      }
+      function closePalette() {
+        document.getElementById("palette").hidden = true;
+      }
+      function filterPalette() {
+        const words = document.getElementById("palette-input").value.toLowerCase().split(/\s+/).filter(Boolean);
+        paletteItems = commands().filter(([label]) => words.every((w) => label.toLowerCase().includes(w)));
+        // Names that start with what you typed come first.
+        if (words.length) {
+          const first = words[0];
+          const score = ([label]) => (label.toLowerCase().split(" ").some((w) => w.startsWith(first)) ? 0 : 1);
+          paletteItems.sort((x, y) => score(x) - score(y));
+        }
+        paletteItems = paletteItems.slice(0, 9);
+        paletteAt = 0;
+        drawPalette();
+      }
+      function drawPalette() {
+        document.getElementById("palette-list").innerHTML =
+          paletteItems
+            .map(([label, img], n) => `<div class="palette-item${n === paletteAt ? " active" : ""}" role="option" aria-selected="${n === paletteAt}" onmousemove="paletteAt=${n};drawPalette()" onclick="runPalette(${n})">${img ? `<img src="${img}" alt="">` : `<span class="palette-glyph">${icon("arrow")}</span>`}<span>${esc(label)}</span>${n === paletteAt ? "<kbd>↩</kbd>" : ""}</div>`)
+            .join("") || '<div class="palette-empty">No matches</div>';
+      }
+      function runPalette(n) {
+        const item = paletteItems[n];
+        closePalette();
+        item?.[2]();
+      }
+      // The installed app under a file drag. Positions may arrive in device pixels, so try both.
+      function dropTarget(x, y) {
+        const dpr = window.devicePixelRatio || 1;
+        for (const [px, py] of [[x, y], [x / dpr, y / dpr]]) {
+          const id = document.elementFromPoint(px, py)?.closest("[data-id]")?.dataset.id;
+          if (id && installed(id)) return id;
+        }
+        return "";
+      }
+      function togglePick(id) {
+        picks.has(id) ? picks.delete(id) : picks.add(id);
+        lastCatalog = "";
+        render();
+        document.querySelector(`#picker [data-id="${id}"]`)?.focus();
+      }
+      function installPicks() {
+        const apps = catalog.filter((a) => picks.has(a.id));
+        modal(
+          `Install ${apps.length} app${apps.length === 1 ? "" : "s"}`,
+          `<p>Craft Library downloads the official Mac release of each app and installs it in ${esc(state.installFolder || "/Applications")}. Apps without a Mac release are built from source, which takes longer.</p>`,
+          `<button class="primary" onclick='send("install-apps",{apps:${JSON.stringify(apps.map((a) => a.id))}});picks.clear();closeModal();view("activity")'>Install</button>`,
+        );
+      }
+      // Sidebar drag to reorder. Native file drops are handled separately (see "drop").
+      let draggedApp = "";
+      function dragApp(event, id) {
+        draggedApp = id;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", id);
+      }
+      function dragOverApp(event) {
+        if (!draggedApp) return;
+        event.preventDefault();
+        const row = event.currentTarget;
+        const after = event.offsetY > row.offsetHeight / 2;
+        row.classList.toggle("drop-after", after);
+        row.classList.toggle("drop-before", !after);
+      }
+      function dropApp(event, target) {
+        event.preventDefault();
+        const after = event.currentTarget.classList.contains("drop-after");
+        clearDrag();
+        const id = draggedApp;
+        draggedApp = "";
+        if (!id || id === target) return;
+        const order = installedApps().map((a) => a.id).filter((x) => x !== id);
+        order.splice(order.indexOf(target) + (after ? 1 : 0), 0, id);
+        const rest = (state.preferences.appOrder || []).filter((x) => !order.includes(x));
+        state.preferences.appOrder = [...order, ...rest];
+        render();
+        send("reorder", { order: state.preferences.appOrder });
+      }
+      function clearDrag() {
+        document.querySelectorAll(".drop-before,.drop-after").forEach((e) => e.classList.remove("drop-before", "drop-after"));
+      }
       let menuActions = [];
       function contextMenu(event, id) {
         event.preventDefault();
@@ -1462,6 +1718,7 @@
           ? [
               ["Open", () => launch(id)],
               latest && [`Update to ${latest}`, () => confirmAction("install-latest")],
+              latest && [`Skip ${latest}`, () => send("skip-version", { version: latest })],
               ["Show in Finder", () => send("open-app")],
               i.install_kind === "installer" && state.installFolder && i.path !== state.installFolder && ["Move to app folder", () => confirmMoveApp()],
               ["Check for update", () => send("check-release")],
@@ -1556,8 +1813,9 @@
         const i = installed(id);
         if (!i) return '<span class="version-line">Available</span>';
         const c = check(id);
-        if (c?.latest)
-          return `<span class="version-line" title="Update available"><span class="status-dot new"></span>${esc(i.version)} → <span class="new">${esc(c.latest)}</span></span>`;
+        if (newer(id))
+          return `<span class="version-line" title="Update available"><span class="status-dot new"></span>${esc(i.version)} → <span class="new">${esc(newer(id))}</span></span>`;
+        if (c?.skipped) return `<span class="version-line" title="You skipped ${esc(c.latest)}"><span class="status-dot"></span>${esc(i.version)} · skipped ${esc(c.latest)}</span>`;
         return `<span class="version-line"><span class="status-dot"></span>${esc(i.version)}${c ? " · Up to date" : ""}</span>`;
       }
       function toast(text) {
@@ -1615,7 +1873,7 @@
           installedApps()
             .map(
               (a, n) =>
-                `<div class="side-app ${selected === a.id ? "active" : ""}" data-id="${a.id}" oncontextmenu="contextMenu(event,'${a.id}')" role="button" tabindex="0" title="Double-click to open ${a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><img src="${a.icon}" alt=""><span class="name">${a.name}</span>${isRunning(a.id) ? '<span class="run-dot" title="Running"></span>' : ""}${newer(a.id) ? `<span class="update-dot" title="Update available: ${esc(newer(a.id))}"></span>` : ""}${n < 9 ? `<span class="shortcut">⌘${n + 1}</span>` : ""}<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button></div>`,
+                `<div class="side-app ${selected === a.id ? "active" : ""}" data-id="${a.id}" draggable="true" ondragstart="dragApp(event,'${a.id}')" ondragover="dragOverApp(event)" ondragleave="this.classList.remove('drop-before','drop-after')" ondrop="dropApp(event,'${a.id}')" ondragend="clearDrag()" oncontextmenu="contextMenu(event,'${a.id}')" role="button" tabindex="0" title="Double-click to open ${a.name}" onclick="choose('${a.id}')" ondblclick="launch('${a.id}')" onkeydown="if(event.key==='Enter')launch('${a.id}')"><img src="${a.icon}" alt=""><span class="name">${a.name}</span>${isRunning(a.id) ? '<span class="run-dot" title="Running"></span>' : ""}${newer(a.id) ? `<span class="update-dot" title="Update available: ${esc(newer(a.id))}"></span>` : ""}${n < 9 ? `<span class="shortcut">⌘${n + 1}</span>` : ""}<button class="open" aria-label="Open ${a.name}" onclick="event.stopPropagation();launch('${a.id}')">Open</button></div>`,
             )
             .join("") ||
           '<p class="tiny" style="padding:10px">Your installed apps appear here.</p>';
@@ -1635,7 +1893,9 @@
           state.updates,
           state.launches,
           state.activity,
+          state.preferences?.appOrder,
           [...running],
+          [...picks],
           job.busy,
           selected,
         ]);
@@ -1688,6 +1948,13 @@
           return;
         }
         const mine = current === "installed";
+        if (mine && !installedApps().length) {
+          e.innerHTML = `<h1>Welcome to Craft Library</h1><p>Pick the apps you want. Craft Library installs the official Mac releases and keeps them up to date.</p><div class="grid picker" id="picker">${catalog
+            .filter((a) => a.id !== "artcraftx")
+            .map((a) => `<div class="app-card${picks.has(a.id) ? " picked" : ""}" data-id="${a.id}" role="checkbox" tabindex="0" aria-checked="${picks.has(a.id)}" onclick="togglePick('${a.id}')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();togglePick('${a.id}')}"><div class="card-top"><img src="${a.icon}" alt=""><div><strong>${a.name}</strong><div class="category">${a.category}</div></div><span class="pick-box">${picks.has(a.id) ? icon("check") : ""}</span></div><div class="description">${a.description}</div></div>`)
+            .join("")}</div><div class="picker-actions"><button class="primary"${picks.size && !job.busy ? "" : " disabled"} onclick="installPicks()">${picks.size ? `Install ${picks.size} app${picks.size === 1 ? "" : "s"}` : "Pick apps to install"}</button><button class="quiet" onclick="view('all')">Browse all apps instead</button></div>`;
+          return;
+        }
         const waiting = installedApps().filter((a) => newer(a.id));
         const banner = waiting.length
           ? `<div class="updates"><div class="updates-head"><span class="update-dot"></span><span class="summary">${waiting.length} update${waiting.length === 1 ? "" : "s"} available <span>· ${waiting.map((a) => a.name).join(", ")}</span></span><button class="quiet" aria-expanded="${showUpdates}" onclick="showUpdates=!showUpdates;lastCatalog='';render()">${showUpdates ? "Hide" : "Show"}</button><button class="primary"${disabled()} onclick="confirmUpdateAll()">Update all</button></div>${(showUpdates ? waiting : []).map((a) => `<div class="update-row" onclick="choose('${a.id}')"><img src="${a.icon}" alt=""><span>${a.name}</span><span class="versions">${esc(installed(a.id).version)} → <span class="new">${esc(newer(a.id))}</span></span><button class="secondary"${disabled()} onclick="event.stopPropagation();choose('${a.id}');confirmAction('install-latest')">Update</button></div>`).join("")}</div>`
@@ -1700,7 +1967,7 @@
           : checks.length < installedApps().length
             ? `Some apps not checked · ${ago(Math.min(...checks))}`
             : `${waiting.length ? "Checked" : "All up to date · checked"} ${ago(Math.min(...checks))}`;
-        e.innerHTML = `<h1>${mine ? "My apps" : "All apps"}</h1><p>${mine ? "Recently opened first." : `${catalog.length} apps from Storytold.`}</p>${banner}<div class="filters"><div class="search">${icon("search")}<input type="search" id="search" aria-label="Search apps" placeholder="Search apps…" value="${esc(query)}"><kbd>⌘K</kbd></div><select id="category" aria-label="Filter by category"><option value="all">All categories</option>${[...new Set(catalog.map((a) => a.category))].map((c) => `<option${category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div><div class="section-title"><span id="result-count"></span><span>${mine ? checked : ""}</span></div><div class="grid" id="grid"></div>${mine && installedApps().length ? '<div class="shortcuts"><span><kbd>⌘K</kbd> search</span><span><kbd>↩</kbd> open best match</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> open from sidebar</span><span><kbd>⌘O</kbd> open selected</span><span><kbd>←</kbd><kbd>→</kbd> move between apps</span><span>Right-click an app for more</span></div>' : ""}`;
+        e.innerHTML = `<h1>${mine ? "My apps" : "All apps"}</h1><p>${mine ? "Recently opened first." : `${catalog.length} apps from Storytold.`}</p>${banner}<div class="filters"><div class="search">${icon("search")}<input type="search" id="search" aria-label="Search apps" placeholder="Search apps…" value="${esc(query)}"><kbd>/</kbd></div><select id="category" aria-label="Filter by category"><option value="all">All categories</option>${[...new Set(catalog.map((a) => a.category))].map((c) => `<option${category === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div><div class="section-title"><span id="result-count"></span><span>${mine ? checked : ""}</span></div><div class="grid" id="grid"></div>${mine && installedApps().length ? '<div class="shortcuts"><span><kbd>⌘K</kbd> commands</span><span><kbd>/</kbd> search</span><span><kbd>↩</kbd> open best match</span><span><kbd>⌘1</kbd>–<kbd>⌘9</kbd> open from sidebar</span><span><kbd>⌘O</kbd> open selected</span><span><kbd>←</kbd><kbd>→</kbd> move between apps</span><span>Right-click an app for more</span></div>' : ""}`;
         document.getElementById("search").oninput = (e) => {
           query = e.target.value;
           renderGrid();
@@ -1745,12 +2012,13 @@
           build = state.builds[selected],
           backs = state.backups[selected] || [];
         const c = check(selected),
-          latest = c?.latest;
+          latest = newer(selected),
+          skipped = c?.skipped ? c.latest : "";
         const key = JSON.stringify([selected, i, c, build, backs, job.busy, isRunning(selected), state.installFolder]);
         if (key === lastDetail) return;
         lastDetail = key;
         document.getElementById("inspector").innerHTML =
-          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row">${!i ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Install latest</button>` : latest ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Update to ${esc(latest)}</button><button class="secondary" onclick="launch(selected)">Open</button>` : `<button class="primary" onclick="launch(selected)">${icon("play")} Open</button><button class="secondary"${disabled()} onclick="send('check-release')">Check for update</button>`}</div>${!i || latest ? '<p class="install-note">Uses the Mac release, or builds from source if there isn’t one.</p>' : ""}<div class="info-row"><span>Status</span><span>${!i ? "Not installed" : latest ? '<span class="new">Update available</span>' : c ? "Up to date" : "Installed"}${i && isRunning(selected) ? ' · <span style="color:var(--ok)">Running</span>' : ""}</span></div>${i ? `<div class="info-row"><span>Installed version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Latest version</span><span>${latest ? `<span class="new">${esc(latest)}</span>` : c ? esc(i.version) : `<button class="link"${disabled()} onclick="send('check-release')">Check now</button>`}</span></div>${c?.checked ? `<div class="info-row"><span>Last checked</span><span>${ago(c.checked)}</span></div>` : ""}<div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div>${latest && c.notes ? notesBlock(latest, c.notes) : ""}<div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Builds the latest source from GitHub into an app.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><div class="detail-buttons"><button class="secondary" onclick="send('launch-build')">Open build</button><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button><button class="quiet" onclick="send('build-launch-settings')">Build launch options…</button></div>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button>${i.install_kind === "installer" && state.installFolder && i.path !== state.installFolder ? `<button class="secondary"${disabled()} onclick="confirmMoveApp()">Move to app folder</button>` : ""}<button class="secondary"${disabled()} onclick="confirmAction('install-latest')">Reinstall latest…</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">No backups yet.</p>'}</details></div>`;
+          `<div class="inspector-top">${icon("box")}App details<button class="icon-button" title="Open official repository" onclick="send('repository')">${icon("external")}</button></div><div class="inspector-body"><div class="detail-heading"><img src="${a.icon}" alt=""><div><h2>${a.name}</h2><span class="tiny">${a.category}</span></div></div><p class="detail-description">${a.description}</p><div class="install-row">${!i ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Install latest</button>` : latest ? `<button class="primary"${disabled()} onclick="confirmAction('install-latest')">Update to ${esc(latest)}</button><button class="secondary" onclick="launch(selected)">Open</button>` : `<button class="primary" onclick="launch(selected)">${icon("play")} Open</button><button class="secondary"${disabled()} onclick="send('check-release')">Check for update</button>`}</div>${!i ? '<p class="install-note">Uses the Mac release, or builds from source if there isn’t one.</p>' : latest ? `<p class="install-note"><button class="link" onclick="send('skip-version',{version:${esc(JSON.stringify(latest))}})">Skip ${esc(latest)}</button> to stop reminders until the next version.</p>` : ""}<div class="info-row"><span>Status</span><span>${!i ? "Not installed" : latest ? '<span class="new">Update available</span>' : c ? "Up to date" : "Installed"}${i && isRunning(selected) ? ' · <span style="color:var(--ok)">Running</span>' : ""}</span></div>${i ? `<div class="info-row"><span>Installed version</span><span>${esc(i.version)}</span></div><div class="info-row"><span>Latest version</span><span>${latest ? `<span class="new">${esc(latest)}</span>` : skipped ? `${esc(skipped)} · skipped · <button class="link" onclick="send('unskip-version')">Undo</button>` : c ? esc(i.version) : `<button class="link"${disabled()} onclick="send('check-release')">Check now</button>`}</span></div>${c?.checked ? `<div class="info-row"><span>Last checked</span><span>${ago(c.checked)}</span></div>` : ""}<div class="info-row"><span>Installed from</span><span>${i.install_origin === "source" ? "Source build" : "Release"}</span></div>` : ""}<div class="info-row"><span>Repository</span><span>Storytold</span></div>${latest && c.notes ? notesBlock(latest, c.notes) : ""}<div class="section-rule"></div><details id="source-section"><summary>${icon("code")}Source build</summary><p class="build-note">Builds the latest source from GitHub into an app.</p><div class="detail-buttons"><button class="secondary"${disabled()} onclick="send('setup');view('activity')">Set up tools</button><button class="primary"${disabled()} onclick="send('build');view('activity')">Build .app</button></div>${build ? `<p class="build-note">A local build is available.</p><div class="detail-buttons"><button class="secondary" onclick="send('launch-build')">Open build</button><button class="secondary"${disabled()} onclick="confirmAction('install-build')">Install built app</button><button class="quiet" onclick="send('build-launch-settings')">Build launch options…</button></div>` : ""}${i ? `<div class="detail-buttons"><button class="quiet"${disabled()} onclick="send('check-source');view('activity')">Check source commit</button></div>` : ""}</details>${i ? `<details><summary>Installed app</summary><div class="provenance">${i.source_commit ? `Commit<br>${esc(i.source_commit)}<br><br>` : ""}${esc(i.path)}</div><div class="detail-buttons"><button class="secondary" onclick="send('open-app')">Open folder</button>${i.install_kind === "installer" && state.installFolder && i.path !== state.installFolder ? `<button class="secondary"${disabled()} onclick="confirmMoveApp()">Move to app folder</button>` : ""}<button class="secondary"${disabled()} onclick="confirmAction('install-latest')">Reinstall latest…</button><button class="secondary"${disabled()} onclick="send('launch-settings')">Launch settings</button><button class="quiet danger"${disabled()} onclick="confirmAction('uninstall')">Uninstall…</button></div></details>` : ""}<details><summary>Backups <span class="tiny">${backs.length}</span></summary>${backs.length ? backs.map((b, n) => `<div class="build-note">${esc(b.name)}<div class="detail-buttons"><button class="secondary"${disabled()} onclick="confirmAction('restore',${n})">Restore</button><button class="quiet"${disabled()} onclick="confirmAction('delete-backup',${n})">Delete</button></div></div>`).join("") : '<p class="build-note">No backups yet.</p>'}</details></div>`;
       }
       function modal(title, body, actions, size = "") {
         document.getElementById("modal-root").innerHTML =
@@ -1762,7 +2030,37 @@
       function closeModal() {
         document.getElementById("modal-root").innerHTML = "";
       }
+      function confirmUninstall() {
+        const a = app(selected);
+        modal(
+          `Uninstall ${a.name}`,
+          `<p>Remove the app. Your documents stay where they are.</p>` +
+            `<label class="field"><span>Also delete its settings, caches and logs<span class="tiny note">Presets, swatches, signing IDs and other things you made are kept.</span></span><input id="del-data" type="checkbox" onchange="document.getElementById('del-recovery').disabled=!this.checked;drawAppData()"></label>` +
+            `<label class="field"><span>Also delete recovery and autosave files<span class="tiny note">These can be the only copy of work you didn’t save.</span></span><input id="del-recovery" type="checkbox" disabled onchange="drawAppData()"></label>` +
+            `<div id="app-data" class="app-data tiny">Looking for app data…</div>`,
+          `<button class="primary" onclick="send('uninstall',{deleteData:document.getElementById('del-data').checked,deleteRecovery:document.getElementById('del-recovery').checked});closeModal();view('activity')">Uninstall</button>`,
+        );
+        appData = null;
+        send("app-data");
+      }
+      let appData = null;
+      function drawAppData() {
+        const e = document.getElementById("app-data");
+        if (!e || !appData) return;
+        const data = document.getElementById("del-data").checked;
+        const recovery = document.getElementById("del-recovery").checked;
+        if (!appData.length) {
+          e.textContent = "This app has no settings or caches to delete.";
+          document.getElementById("del-data").disabled = true;
+          return;
+        }
+        if (!appData.some((i) => i.recovery)) document.getElementById("del-recovery").closest("label").hidden = true;
+        e.innerHTML = data
+          ? `<div>Will delete:</div><ul>${appData.filter((i) => recovery || !i.recovery).map((i) => `<li>${esc(i.path)}</li>`).join("")}</ul>`
+          : `${appData.length} item${appData.length === 1 ? "" : "s"} of app data found.`;
+      }
       function confirmAction(action, index) {
+        if (action === "uninstall") return confirmUninstall();
         const backup = (state.backups[selected] || [])[index];
         const backupSelection = JSON.stringify({backupName: backup?.name, backupSource: backup?.source}).replaceAll('"', '&quot;');
         const a = app(selected);
@@ -1807,6 +2105,7 @@
         const general =
           checkbox("start-at-login", "Open at login", state.startAtLogin) +
           checkbox("menu-bar", "Show in the menu bar", p.menuBarIcon, "Open apps from the menu bar, like the Dock menu.") +
+          `<label class="field"><span>Shortcut from any app<span class="tiny note">Brings up Craft Library with the command palette. Press again to hide it.</span></span><select id="global-shortcut">${[["", "Off"], ["option-space", "⌥ Space"], ["control-option-space", "⌃⌥ Space"], ["option-command-space", "⌥⌘ Space"]].map(([v, l]) => `<option value="${v}"${(p.globalShortcut || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>` +
           `<div class="setting-heading">Craft Library</div><div class="detail-buttons"><button class="secondary" onclick="send('manager-check')">Check for updates</button><button class="secondary" onclick="send('fork')">GitHub</button><button class="secondary" onclick="about()">About Craft Library</button></div><div id="manager-result" class="update-result"></div>`;
         const updates =
           checkbox("startup-apps", "Check apps when Craft Library opens", p.checkInstalledAppsOnStartup) +
@@ -1945,6 +2244,7 @@
             releaseFormat: mode === "portable" ? "portable" : "installer",
             installFolder,
             menuBarIcon: checked("menu-bar"),
+            globalShortcut: document.getElementById("global-shortcut").value,
             autoUpdateApps: checked("auto-update"),
             notifyUpdates: checked("notify-updates"),
             keepAppBackups: checked("app-backups"),
@@ -1990,11 +2290,10 @@
           theme(state.ui.theme, false);
           if (firstSnapshot) {
             firstSnapshot = false;
+            // Open on My apps: the launcher, or the welcome picker when nothing is installed yet.
+            current = "installed";
             const mine = recentFirst(installedApps());
-            if (mine.length) {
-              current = "installed";
-              if (!installed(selected)) selected = mine[0].id;
-            }
+            if (mine.length && !installed(selected)) selected = mine[0].id;
           }
           lastCatalog = "";
           render();
@@ -2025,6 +2324,25 @@
             `<p>${event.build ? "Used when you open the local build. Your installed app keeps its own settings. " : ""}One argument per line. Leave empty to use the default launch options.</p><textarea id="launch-arguments">${esc(event.settings.arguments.join("\n"))}</textarea>`,
             `<button class="primary" onclick="send('${save}',{arguments:document.getElementById('launch-arguments').value});closeModal()">Save</button>`,
           );
+        } else if (event.type === "app-data") {
+          if (event.app === selected) {
+            appData = event.items;
+            drawAppData();
+          }
+        } else if (event.type === "palette") {
+          openPalette();
+        } else if (event.type === "drag" || event.type === "drop") {
+          const id = dropTarget(event.x, event.y);
+          document.querySelectorAll(".file-target").forEach((e) => e.classList.remove("file-target"));
+          if (event.type === "drag") {
+            if (id) document.querySelectorAll(`[data-id="${id}"]`).forEach((e) => e.classList.add("file-target"));
+          } else if (id) {
+            send("open-files", { app: id, files: event.paths });
+          } else {
+            toast("Drop files on an installed app to open them in it.");
+          }
+        } else if (event.type === "drag-leave") {
+          document.querySelectorAll(".file-target").forEach((e) => e.classList.remove("file-target"));
         } else if (event.type === "disk-usage") {
           showUsage(event.parts);
         } else if (event.type === "folder-chosen") {
@@ -2042,7 +2360,23 @@
         if (e.button === 0) send("drag");
       };
       document.getElementById("drag").ondblclick = () => send("maximize");
+      document.getElementById("palette-input").addEventListener("input", filterPalette);
+      document.getElementById("palette-input").addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const n = paletteItems.length || 1;
+          paletteAt = (paletteAt + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+          drawPalette();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          runPalette(paletteAt);
+        } else if (e.key === "Escape") {
+          e.stopPropagation();
+          closePalette();
+        }
+      });
       document.addEventListener("keydown", (e) => {
+        if (!document.getElementById("palette").hidden) return;
         const menu = document.getElementById("ctx");
         if (!menu.hidden) {
           if (e.key === "Escape") return closeMenu();
@@ -2068,7 +2402,10 @@
           launch(selected);
           return;
         }
-        if ((e.metaKey && e.key === "k") || (e.key === "/" && !typing)) {
+        if (e.metaKey && e.key === "k") {
+          e.preventDefault();
+          openPalette();
+        } else if (e.key === "/" && !typing) {
           e.preventDefault();
           if (current !== "all" && current !== "installed") view("installed");
           document.getElementById("search")?.focus();

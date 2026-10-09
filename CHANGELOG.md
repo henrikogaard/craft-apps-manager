@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.7
+
+- Command palette: ⌘K opens apps and runs actions like Update, Install, Check all and Settings. Search moves to /.
+- Optional shortcut from any app (⌥Space, ⌃⌥Space or ⌥⌘Space) brings up Craft Library with the palette, and hides it again.
+- Drop files on an installed app to open them in it.
+- Drag apps in the sidebar to change their order; ⌘1–⌘9 follow it.
+- Skip an update you don't want. It stops the reminder, the Dock count and automatic updates until the next version.
+- Uninstall can also delete the app's settings, caches and logs, and separately its recovery files. The list of what goes comes from each app's source code, and user-made presets, swatches, signing IDs and media are kept.
+- A welcome screen to pick apps when nothing is installed yet.
+- Light mode checked across the new screens, and fixed hidden panels that could show up.
+
 ## 0.1.6
 
 - Right-click an app for Open, Update, Show in Finder, Move, Check for update and Uninstall.

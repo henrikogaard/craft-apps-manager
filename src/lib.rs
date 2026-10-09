@@ -15,6 +15,7 @@ pub mod library;
 pub mod model;
 pub mod network;
 pub mod platform;
+pub mod profiles;
 pub mod scheduler;
 pub mod self_update;
 pub mod tools;

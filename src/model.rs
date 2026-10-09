@@ -24,6 +24,13 @@ pub const APPS: [&str; 14] = [
     "artcraft",
     "artcraftx",
 ];
+/// Global shortcuts Craft Library can register; "" is off.
+pub const SHORTCUTS: [&str; 4] = [
+    "",
+    "option-space",
+    "control-option-space",
+    "option-command-space",
+];
 pub const SOURCES: [&str; 14] = [
     "designcraft",
     "effectcraft",
@@ -96,6 +103,10 @@ pub struct Preferences {
     pub auto_update_apps: bool,
     /// Show the Craft Library menu in the menu bar.
     pub menu_bar_icon: bool,
+    /// Update versions the user chose to skip, by app.
+    pub skipped_versions: std::collections::BTreeMap<String, String>,
+    /// Shortcut that brings Craft Library forward from any app; empty is off.
+    pub global_shortcut: String,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -117,6 +128,8 @@ impl Default for Preferences {
             previous_install_folders: Vec::new(),
             auto_update_apps: false,
             menu_bar_icon: false,
+            skipped_versions: Default::default(),
+            global_shortcut: String::new(),
         }
     }
 }
@@ -133,6 +146,11 @@ impl Preferences {
             if !folder.is_absolute() || folder.parent().is_none() {
                 bail!("The app folder must be an absolute folder path");
             }
+        }
+        self.skipped_versions
+            .retain(|app, _| APPS.contains(&app.as_str()));
+        if !SHORTCUTS.contains(&self.global_shortcut.as_str()) {
+            self.global_shortcut.clear();
         }
         let current = self.install_folder.clone();
         self.previous_install_folders

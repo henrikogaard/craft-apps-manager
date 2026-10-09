@@ -13,8 +13,10 @@ Download the DMG from [releases](https://github.com/henrikogaard/craft-apps-mana
 ## What it does
 
 - Installs the official Mac release of each app. If an app has no Mac release yet, it builds one from the official source instead.
-- Shows the version you have next to the latest one, with the release notes. Check all looks for updates, Update all installs them. It can also install updates on its own, for apps that aren't open.
-- Opens apps. Double-click a card, use the arrow keys and Return, press ⌘1 to ⌘9 for the apps in the sidebar, or press ⌘K, type a name and hit Return. Right-click an app for the rest. The Dock icon and an optional menu bar icon list your apps too.
+- Shows the version you have next to the latest one, with the release notes. Check all looks for updates, Update all installs them. It can also install updates on its own, for apps that aren't open. You can skip a version you don't want.
+- Uninstalls apps, and can also delete their settings, caches and logs. Presets, swatches, signing IDs and other things you made are kept.
+- Opens apps. Double-click a card, use the arrow keys and Return, or press ⌘1 to ⌘9 for the apps in the sidebar (drag them to change the order). ⌘K opens a command palette for apps and actions, and an optional shortcut such as ⌥Space brings it up from any app. Right-click an app for the rest. The Dock icon and an optional menu bar icon list your apps too.
+- Drop files on an app to open them in it.
 - Shows which apps are running, and puts the number of waiting updates on the Dock icon.
 - Can keep the previous version when it updates an app, so you can roll back.
 - Builds apps from source and lets you open a build without installing it.

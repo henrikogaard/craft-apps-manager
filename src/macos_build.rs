@@ -858,6 +858,31 @@ pub fn install_selected(paths: &Paths, job: &Job) -> Result<()> {
     }
     Ok(())
 }
+/// Installs the chosen apps one after another, continuing past failures.
+pub fn install_apps(paths: &Paths, apps: &[String], job: &Job) -> Result<()> {
+    let mut failures = 0;
+    for (n, app) in apps.iter().enumerate() {
+        crate::model::valid_app(app)?;
+        job.check()?;
+        job.stage(
+            "Installing apps",
+            Some(n as f32 / apps.len().max(1) as f32),
+            crate::model::title(app),
+        );
+        if let Err(error) = install_latest(paths, app, job) {
+            job.check()?;
+            failures += 1;
+            job.log(&format!("{app}: {error:#}"));
+        }
+    }
+    if failures > 0 {
+        bail!(
+            "{failures} of {} app(s) could not be installed; see the activity log",
+            apps.len()
+        );
+    }
+    Ok(())
+}
 /// Installs every app whose last release check found a newer version than the one installed.
 pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
     let prefs = paths.preferences()?;
@@ -867,7 +892,11 @@ pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
         .filter(|app| {
             checks
                 .get(&crate::hourly::key(&prefs, &app.name))
-                .is_some_and(|c| c.installed == app.version && c.latest.is_some())
+                .is_some_and(|c| {
+                    c.installed == app.version
+                        && c.latest.is_some()
+                        && prefs.skipped_versions.get(&app.name) != c.latest.as_ref()
+                })
         })
         .collect();
     if apps.is_empty() {

@@ -64,6 +64,7 @@ fn auto_update(paths: &Paths, prefs: &Preferences, job: &Job) -> Result<()> {
             .get(&key(prefs, &app.name))
             .filter(|c| c.installed == app.version)
             .and_then(|c| c.latest.clone())
+            .filter(|v| prefs.skipped_versions.get(&app.name) != Some(v))
         else {
             continue;
         };

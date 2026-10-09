@@ -1,4 +1,5 @@
-//! Native macOS pieces: Dock menu and badge, menu bar menu, login item and folder picker.
+//! Native macOS pieces: Dock menu and badge, menu bar menu, login item, global shortcut and
+//! folder picker.
 //! Main thread only.
 use std::{
     ffi::{c_char, CStr, CString},
@@ -114,4 +115,28 @@ pub fn set_login(on: bool) -> anyhow::Result<()> {
         .into_owned();
     unsafe { libc::free(error.cast()) };
     anyhow::bail!(message)
+}
+
+extern "C" {
+    fn craft_hotkey_set(key_code: u32, modifiers: u32) -> bool;
+}
+/// Registers the global shortcut named in settings ("" turns it off). Pressing it reaches the
+/// Dock handler as "__toggle".
+pub fn set_shortcut(name: &str) -> anyhow::Result<()> {
+    // Carbon virtual key code for Space and modifier masks (cmdKey, optionKey, controlKey).
+    const SPACE: u32 = 49;
+    const COMMAND: u32 = 1 << 8;
+    const OPTION: u32 = 1 << 11;
+    const CONTROL: u32 = 1 << 12;
+    let (key, modifiers) = match name {
+        "" => (0, 0),
+        "option-space" => (SPACE, OPTION),
+        "control-option-space" => (SPACE, CONTROL | OPTION),
+        "option-command-space" => (SPACE, OPTION | COMMAND),
+        _ => anyhow::bail!("Unknown shortcut"),
+    };
+    if !unsafe { craft_hotkey_set(key, modifiers) } {
+        anyhow::bail!("That shortcut is already used by another app. Pick a different one.");
+    }
+    Ok(())
 }

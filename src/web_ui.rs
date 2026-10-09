@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -190,7 +190,7 @@ fn snapshot(paths: &Paths) -> Result<Value> {
             (check.installed == a.version).then(|| {
                 (
                     a.name.clone(),
-                    json!({"latest":check.latest,"checked":check.checked,"notes":check.notes}),
+                    json!({"latest":check.latest,"checked":check.checked,"notes":check.notes,"skipped":check.latest.is_some() && prefs.skipped_versions.get(&a.name) == check.latest.as_ref()}),
                 )
             })
         })
@@ -203,6 +203,10 @@ fn snapshot(paths: &Paths) -> Result<Value> {
 const LAUNCHES: &str = "runtime/launches.json";
 fn launch(paths: &Paths, app: &str) -> Result<()> {
     apps::launch(paths, app)?;
+    launch_record(paths, app)
+}
+/// Remembers when an app was last opened, for "recently opened first".
+fn launch_record(paths: &Paths, app: &str) -> Result<()> {
     let mut launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
     launches.insert(app.into(), chrono::Utc::now().timestamp());
     files::write_json(&paths.at(LAUNCHES), &launches)
@@ -366,7 +370,20 @@ fn operation(
             );
             Ok(())
         }
-        "uninstall" => apps::uninstall(paths, app),
+        "uninstall" => {
+            apps::uninstall(paths, app)?;
+            job.log(&format!("Uninstalled {}", model::title(app)));
+            if value["deleteData"].as_bool() == Some(true) {
+                let home =
+                    std::path::PathBuf::from(std::env::var_os("HOME").context("No home folder")?);
+                let items = craft_apps_manager::profiles::existing(&home, app);
+                let recovery = value["deleteRecovery"].as_bool() == Some(true);
+                for path in craft_apps_manager::profiles::remove(&home, &items, recovery)? {
+                    job.log(&format!("Deleted {}", path.display()));
+                }
+            }
+            Ok(())
+        }
         "delete-build" => {
             let folder = builder::history(paths, app).context("No local build exists")?;
             builder::delete_local(paths, app, &folder)?;
@@ -395,6 +412,10 @@ fn operation(
             Ok(())
         }
         "move-apps" => macos_build::move_apps(paths, job),
+        "install-apps" => {
+            let apps: Vec<String> = serde_json::from_value(value["apps"].clone())?;
+            macos_build::install_apps(paths, &apps, job)
+        }
         "move-library" => {
             let to = value["path"].as_str().context("Missing folder")?;
             library::move_library(paths, Path::new(to), job)
@@ -418,7 +439,9 @@ fn update_dock(value: &Value) {
         .collect();
     dock::set_apps(&apps);
     let updates = value["updates"].as_object().map_or(0, |u| {
-        u.values().filter(|c| c["latest"].is_string()).count()
+        u.values()
+            .filter(|c| c["latest"].is_string() && c["skipped"] != true)
+            .count()
     });
     dock::set_badge(updates);
 }
@@ -509,9 +532,26 @@ pub fn run(paths: Paths) -> Result<()> {
         }
     }));
     let ipc = proxy.clone();
+    let drops = proxy.clone();
     let web = wry::WebViewBuilder::new()
         .with_html(html())
         .with_navigation_handler(|url| url == "about:blank")
+        .with_drag_drop_handler(move |event| {
+            // Files dropped on an app card open in that app; the page decides which card.
+            let message = match event {
+                wry::DragDropEvent::Enter { position, .. }
+                | wry::DragDropEvent::Over { position } => {
+                    json!({"type":"drag","x":position.0,"y":position.1})
+                }
+                wry::DragDropEvent::Drop { paths, position } => {
+                    json!({"type":"drop","x":position.0,"y":position.1,"paths":paths})
+                }
+                wry::DragDropEvent::Leave => json!({"type":"drag-leave"}),
+                _ => return false,
+            };
+            post(&drops, UiEvent::Emit(message));
+            true
+        })
         .with_ipc_handler(move |request| {
             if request.body().len() < 64_000 {
                 if let Ok(value) = serde_json::from_str(request.body()) {
@@ -536,7 +576,7 @@ pub fn run(paths: Paths) -> Result<()> {
         .windows(2)
         .find(|a| a[0] == "--app")
         .map(|a| a[1].clone());
-    event_loop.run(move |event, _, flow| {
+    event_loop.run(move |event, target, flow| {
         let _keep_menu_alive = &native_menu;
         *flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
         match event {
@@ -562,10 +602,16 @@ pub fn run(paths: Paths) -> Result<()> {
             Event::NewEvents(tao::event::StartCause::Init) => {
                 let launcher = std::sync::Mutex::new(proxy.clone());
                 dock::start(move |app| {
-                    let message = if app == "__show" { json!({"action":"show-window"}) } else { json!({"action":"launch","app":app}) };
+                    let message = match app.as_str() {
+                        "__show" => json!({"action":"show-window"}),
+                        "__toggle" => json!({"action":"toggle-window"}),
+                        _ => json!({"action":"launch","app":app}),
+                    };
                     if let Ok(proxy) = launcher.lock() { post(&proxy, UiEvent::Message(message)); }
                 });
-                dock::set_menu_bar(paths.preferences().is_ok_and(|p| p.menu_bar_icon));
+                let prefs = paths.preferences().unwrap_or_default();
+                dock::set_menu_bar(prefs.menu_bar_icon);
+                if let Err(e) = dock::set_shortcut(&prefs.global_shortcut) { post(&proxy, UiEvent::Feedback(format!("{e:#}"))); }
             },
             Event::UserEvent(UiEvent::Message(value)) => {
                 let result = (|| -> Result<()> {
@@ -578,6 +624,26 @@ pub fn run(paths: Paths) -> Result<()> {
                         "close" => { if job.state.lock().unwrap().busy { closing = true; job.cancel.store(true, Ordering::Relaxed); } else { *flow = ControlFlow::Exit; } return Ok(()); },
                         "cancel" => { job.cancel.store(true, Ordering::Relaxed); return Ok(()); },
                         "show-window" => { window.set_visible(true); window.set_minimized(false); window.set_focus(); return Ok(()); },
+                        // The global shortcut hides Craft Library when it is in front, otherwise brings it
+                        // forward with the command palette open.
+                        "toggle-window" => {
+                            if window.is_focused() && window.is_visible() && !window.is_minimized() {
+                                use tao::platform::macos::EventLoopWindowTargetExtMacOS;
+                                target.hide_application();
+                            } else {
+                                window.set_visible(true); window.set_minimized(false); window.set_focus();
+                                emit(&web, json!({"type":"palette"}));
+                            }
+                            return Ok(());
+                        },
+                        "reorder" => {
+                            let mut prefs = paths.preferences()?;
+                            prefs.app_order = serde_json::from_value(value["order"].clone())?;
+                            prefs.validate()?;
+                            files::write_json(&paths.at("manager-settings.json"), &prefs)?;
+                            refresh(&paths, &proxy);
+                            return Ok(());
+                        },
                         "disk-usage" => {
                             let p = paths.clone(); let tx = proxy.clone();
                             std::thread::spawn(move || {
@@ -611,7 +677,9 @@ pub fn run(paths: Paths) -> Result<()> {
                     if job.state.lock().unwrap().busy { bail!("Wait for the current operation to finish"); }
                     if action == "settings" {
                         save_settings(&paths, &value)?;
-                        dock::set_menu_bar(paths.preferences()?.menu_bar_icon);
+                        let prefs = paths.preferences()?;
+                        dock::set_menu_bar(prefs.menu_bar_icon);
+                        dock::set_shortcut(&prefs.global_shortcut)?;
                         if let Some(on) = value["startAtLogin"].as_bool() { if on != dock::login_enabled() { dock::set_login(on)?; } }
                         refresh(&paths, &proxy);
                         return Ok(());
@@ -625,11 +693,25 @@ pub fn run(paths: Paths) -> Result<()> {
                         "open-build" => return platform::open(&builder::history(&paths, &app).context("No local build exists")?),
                         "launch-settings" => { emit(&web, json!({"type":"launch-settings","settings":apps::settings(&paths,&app)?})); return Ok(()); },
                         "launch-build" => return builder::launch_local(&paths, &app),
+                        "app-data" => {
+                            let home = PathBuf::from(std::env::var_os("HOME").context("No home folder")?);
+                            let items: Vec<_> = craft_apps_manager::profiles::existing(&home, &app).into_iter().map(|i| json!({"path": i.path.strip_prefix(&home).map(|p| format!("~/{}", p.display())).unwrap_or_else(|_| i.path.display().to_string()), "recovery": i.recovery})).collect();
+                            emit(&web, json!({"type":"app-data","app":app,"items":items}));
+                            return Ok(());
+                        },
+                        "open-files" => { let files: Vec<PathBuf> = serde_json::from_value(value["files"].clone())?; apps::open_files(&paths, &app, &files)?; let _ = launch_record(&paths, &app); refresh(&paths, &proxy); return Ok(()); },
+                        "skip-version" | "unskip-version" => {
+                            let mut prefs = paths.preferences()?;
+                            if action == "skip-version" { prefs.skipped_versions.insert(app.clone(), value["version"].as_str().context("Missing version")?.to_owned()); } else { prefs.skipped_versions.remove(&app); }
+                            files::write_json(&paths.at("manager-settings.json"), &prefs)?;
+                            refresh(&paths, &proxy);
+                            return Ok(());
+                        },
                         "build-launch-settings" => { emit(&web, json!({"type":"launch-settings","build":true,"settings":builder::launch_options(&paths,&app)?})); return Ok(()); },
                         "save-build-launch-settings" => { let mut settings = builder::launch_options(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); builder::save_launch_options(&paths,&app,&settings)?; return Ok(()); },
                         "release-notes" => return platform::open(Path::new(&format!("https://github.com/storytold/{}/releases/latest", model::repository(&app)))),
                         "save-launch-settings" => { let mut settings = apps::settings(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); apps::save(&paths,&app,&settings)?; return Ok(()); },
-                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "move-app" | "move-apps" | "move-library" | "clean-builds" | "clear-backups" | "clear-downloads" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
+                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "move-app" | "move-apps" | "move-library" | "clean-builds" | "clear-backups" | "clear-downloads" | "install-apps" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
                         _ => bail!("Unknown action"),
                     }
                     // The library's own logs move with it, so its move logs to the temporary folder.

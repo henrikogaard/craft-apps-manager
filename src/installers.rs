@@ -54,11 +54,15 @@ fn application_folders() -> Vec<PathBuf> {
     folders
 }
 pub fn detect(app: &str) -> Result<Option<Installed>> {
+    detect_in(app, &application_folders())
+}
+/// Finds an installed app in the first of `folders` that holds a matching bundle.
+pub fn detect_in(app: &str, folders: &[PathBuf]) -> Result<Option<Installed>> {
     if !crate::model::APPS.contains(&app) {
         return Ok(None);
     }
-    for folder in application_folders() {
-        let Some(bundle) = crate::model::installed_executable(&folder, app) else {
+    for folder in folders {
+        let Some(bundle) = crate::model::installed_executable(folder, app) else {
             continue;
         };
         if !bundle.is_dir() || crate::files::linked(&bundle)? {

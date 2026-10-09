@@ -4,7 +4,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use craft_apps_manager::{
     apps, backups, builder, dock, files,
     jobs::Job,
-    macos_build,
+    library, macos_build,
     model::{self, BuilderPreferences, Paths, Preferences, APPS},
     platform, scheduler, self_update, tools, updates,
 };
@@ -185,7 +185,7 @@ fn snapshot(paths: &Paths) -> Result<Value> {
         .collect();
     let launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
     Ok(
-        json!({"apps":config.apps,"updates":updates,"launches":launches,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"apps":config.apps,"updates":updates,"launches":launches,"library":paths.root,"defaultLibrary":model::Locations::home()?,"installFolder":paths.install_folder()?,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
     )
 }
 const LAUNCHES: &str = "runtime/launches.json";
@@ -219,6 +219,14 @@ fn theme(paths: &Paths, value: &str) -> Result<()> {
 }
 fn save_settings(paths: &Paths, value: &Value) -> Result<()> {
     let mut prefs: Preferences = serde_json::from_value(value["preferences"].clone())?;
+    let old_prefs = paths.preferences()?;
+    if !old_prefs.install_folder.is_empty()
+        && old_prefs.install_folder != prefs.install_folder.trim()
+    {
+        prefs
+            .previous_install_folders
+            .insert(0, old_prefs.install_folder.clone());
+    }
     prefs.validate()?;
     let build: BuilderPreferences = serde_json::from_value(value["buildPreferences"].clone())?;
     if !(1..=100).contains(&build.log_size_mb) || build.log_archives > 5 {
@@ -233,7 +241,6 @@ fn save_settings(paths: &Paths, value: &Value) -> Result<()> {
             .context("Missing source check preference")?,
     ];
     let previous = [scheduler::status(false)?, scheduler::status(true)?];
-    let old_prefs = paths.preferences()?;
     let old_build = paths.builder_preferences()?;
     let result = (|| -> Result<()> {
         for source in [false, true] {
@@ -339,6 +346,12 @@ fn operation(
             backups::delete_selected(paths, app, &[selected_backup(paths, app, value)?])
         }
         "fetch-sources" => updates::sources(paths, &paths.preferences()?.selected_sources, job),
+        "move-app" => macos_build::move_app(paths, app, job).map(|_| ()),
+        "move-apps" => macos_build::move_apps(paths, job),
+        "move-library" => {
+            let to = value["path"].as_str().context("Missing folder")?;
+            library::move_library(paths, Path::new(to), job)
+        }
         _ => bail!("Unknown operation"),
     }
 }
@@ -361,6 +374,26 @@ fn update_dock(value: &Value) {
         u.values().filter(|c| c["latest"].is_string()).count()
     });
     dock::set_badge(updates);
+}
+/// Starts a fresh Craft Library once this one has exited, so a new library folder takes effect.
+fn relaunch() -> Result<()> {
+    let exe = std::env::current_exe()?;
+    let target = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .map_or(exe.clone(), Path::to_path_buf);
+    let opener = if target == exe {
+        "\"$1\""
+    } else {
+        "/usr/bin/open -n \"$1\""
+    };
+    std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(format!("sleep 1; {opener}"))
+        .arg("sh")
+        .arg(&target)
+        .spawn()?;
+    Ok(())
 }
 fn emit(web: &wry::WebView, value: Value) {
     let _ = web.evaluate_script(&format!("window.receive({value})"));
@@ -420,6 +453,7 @@ pub fn run(paths: Paths) -> Result<()> {
     let mut last_job = String::new();
     let mut last_poll = Instant::now();
     let mut was_busy = false;
+    let mut restart_after_job = false;
     let mut closing = false;
     let mut startup_pending = true;
     let mut running: Vec<String> = Vec::new();
@@ -469,6 +503,19 @@ pub fn run(paths: Paths) -> Result<()> {
                             theme(&paths, selected_theme)?;
                             window.set_theme(Some(if selected_theme == "light" { Theme::Light } else { Theme::Dark })); return Ok(()); },
                         "open-library" => return platform::open(&paths.root),
+                        "choose-folder" => {
+                            let purpose = value["purpose"].as_str().context("Missing purpose")?;
+                            let (message, initial) = match purpose {
+                                "library" => ("Choose a folder for the Craft Library library. Downloads, sources, builds, backups and logs go here.", paths.root.clone()),
+                                "apps" => ("Choose where Craft apps are installed.", paths.install_folder()?),
+                                _ => bail!("Unknown folder"),
+                            };
+                            if let Some(path) = dock::choose_folder(message, &initial) {
+                                emit(&web, json!({"type":"folder-chosen","purpose":purpose,"path":path}));
+                            }
+                            return Ok(());
+                        },
+                        "restart" => { relaunch()?; *flow = ControlFlow::Exit; return Ok(()); },
                         "open-log" => return platform::open(&job.log_path),
                         "fork" => return platform::open(Path::new(self_update::REPOSITORY)),
                         "manager-check" => return self_update::check(),
@@ -476,6 +523,7 @@ pub fn run(paths: Paths) -> Result<()> {
                     }
                     if job.state.lock().unwrap().busy { bail!("Wait for the current operation to finish"); }
                     if action == "settings" { save_settings(&paths, &value)?; refresh(&paths, &proxy); return Ok(()); }
+                    if action == "use-library" { library::use_library(Path::new(value["path"].as_str().context("Missing folder")?))?; relaunch()?; *flow = ControlFlow::Exit; return Ok(()); }
                     let app = value["app"].as_str().context("Missing app")?.to_owned(); model::valid_app(&app)?;
                     match action {
                         "repository" => return platform::open(Path::new(&format!("https://github.com/storytold/{}", model::repository(&app)))),
@@ -488,10 +536,12 @@ pub fn run(paths: Paths) -> Result<()> {
                         "save-build-launch-settings" => { let mut settings = builder::launch_options(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); builder::save_launch_options(&paths,&app,&settings)?; return Ok(()); },
                         "release-notes" => return platform::open(Path::new(&format!("https://github.com/storytold/{}/releases/latest", model::repository(&app)))),
                         "save-launch-settings" => { let mut settings = apps::settings(&paths,&app)?; settings.arguments = value["arguments"].as_str().context("Missing arguments")?.lines().filter(|s| !s.is_empty()).map(str::to_owned).collect(); apps::save(&paths,&app,&settings)?; return Ok(()); },
-                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
+                        "install-latest" | "install-selected" | "build" | "setup" | "install-build" | "check-source" | "check-release" | "check-updates" | "update-all" | "delete-build" | "move-app" | "move-apps" | "move-library" | "uninstall" | "restore" | "delete-backup" | "fetch-sources" => {},
                         _ => bail!("Unknown action"),
                     }
-                    job = Job::new(paths.at(format!("logs/{app}.log")), &paths.builder_preferences()?);
+                    // The library's own logs move with it, so its move logs to the temporary folder.
+                    job = Job::new(if action == "move-library" { std::env::temp_dir().join("craft-library-move.log") } else { paths.at(format!("logs/{app}.log")) }, &paths.builder_preferences()?);
+                    restart_after_job = action == "move-library";
                     let p = paths.clone(); let tx = proxy.clone();
                     self_update::set_busy(true);
                     job.spawn(move |job| operation(&p, &app, &value, &job, &tx));
@@ -503,7 +553,14 @@ pub fn run(paths: Paths) -> Result<()> {
                 last_poll = Instant::now(); let state = job.state.lock().unwrap().clone();
                 let value = json!({"type":"job","data":{"busy":state.busy,"stage":state.stage,"detail":state.detail,"progress":state.progress,"log":state.log,"outcome":state.outcome}});
                 let encoded = value.to_string(); if encoded != last_job { emit(&web,value); last_job = encoded; }
-                if was_busy && !state.busy { refresh(&paths, &proxy); }
+                if was_busy && !state.busy {
+                    if restart_after_job && state.outcome == "Success" {
+                        if let Err(e) = relaunch() { post(&proxy, UiEvent::Feedback(format!("Restart Craft Library to finish: {e:#}"))); } else { *flow = ControlFlow::Exit; }
+                    } else {
+                        refresh(&paths, &proxy);
+                    }
+                    restart_after_job = false;
+                }
                 self_update::set_busy(state.busy);
                 was_busy = state.busy;
                 if closing && !state.busy { *flow = ControlFlow::Exit; }

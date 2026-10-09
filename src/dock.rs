@@ -1,4 +1,4 @@
-//! Dock icon menu (open an installed app) and update badge. Main thread only.
+//! Native macOS pieces: Dock icon menu and badge, and the folder picker. Main thread only.
 use std::{
     ffi::{c_char, CStr, CString},
     sync::OnceLock,
@@ -70,4 +70,22 @@ pub fn set_badge(updates: usize) {
     })
     .unwrap_or_default();
     unsafe { craft_dock_set_badge(label.as_ptr()) }
+}
+
+extern "C" {
+    fn craft_choose_folder(message: *const c_char, initial: *const c_char) -> *mut c_char;
+}
+/// Shows the macOS folder picker and returns the chosen folder, or None if cancelled.
+pub fn choose_folder(message: &str, initial: &std::path::Path) -> Option<std::path::PathBuf> {
+    let message = CString::new(message).ok()?;
+    let initial = CString::new(initial.to_string_lossy().as_bytes()).ok()?;
+    let chosen = unsafe { craft_choose_folder(message.as_ptr(), initial.as_ptr()) };
+    if chosen.is_null() {
+        return None;
+    }
+    let path = unsafe { CStr::from_ptr(chosen) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { libc::free(chosen.cast()) };
+    Some(path.into())
 }

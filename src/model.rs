@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -88,6 +88,10 @@ pub struct Preferences {
     #[serde(alias = "checkUpdaterOnStartup")]
     pub check_manager_on_startup: bool,
     pub check_installed_apps_on_startup: bool,
+    /// Folder for installed apps; empty means /Applications.
+    pub install_folder: String,
+    /// App folders chosen before, still searched so apps left there stay visible.
+    pub previous_install_folders: Vec<String>,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -105,6 +109,8 @@ impl Default for Preferences {
             app_order: APPS.iter().map(|s| s.to_string()).collect(),
             check_manager_on_startup: false,
             check_installed_apps_on_startup: false,
+            install_folder: String::new(),
+            previous_install_folders: Vec::new(),
         }
     }
 }
@@ -115,6 +121,18 @@ impl Preferences {
         {
             bail!("Unsupported release format or architecture");
         }
+        self.install_folder = self.install_folder.trim().to_owned();
+        if !self.install_folder.is_empty() {
+            let folder = Path::new(&self.install_folder);
+            if !folder.is_absolute() || folder.parent().is_none() {
+                bail!("The app folder must be an absolute folder path");
+            }
+        }
+        let current = self.install_folder.clone();
+        self.previous_install_folders
+            .retain(|f| *f != current && Path::new(f).is_absolute());
+        self.previous_install_folders.dedup();
+        self.previous_install_folders.truncate(5);
         self.backup_versions = self.backup_versions.clamp(1, 10);
         self.selected_apps.retain(|s| APPS.contains(&s.as_str()));
         self.selected_apps.sort();
@@ -217,6 +235,27 @@ pub struct BuildInfo {
     pub profile: String,
     pub log: String,
 }
+/// Library and tools folders saved in the default library folder (`data-root.json`).
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Locations {
+    pub root: Option<PathBuf>,
+    pub tools: Option<PathBuf>,
+}
+impl Locations {
+    /// The default library folder, which always holds `data-root.json`.
+    pub fn home() -> Result<PathBuf> {
+        Ok(
+            PathBuf::from(std::env::var_os("HOME").context("No macOS home directory")?)
+                .join("Library/Application Support/Craft Apps Manager"),
+        )
+    }
+    pub fn read() -> Result<Self> {
+        crate::files::read_or_default(&Self::home()?.join("data-root.json"))
+    }
+    pub fn write(&self) -> Result<()> {
+        crate::files::write_json(&Self::home()?.join("data-root.json"), self)
+    }
+}
 #[derive(Clone)]
 pub struct Paths {
     pub root: PathBuf,
@@ -231,7 +270,33 @@ impl Paths {
         self.root.join(name)
     }
     pub fn config(&self) -> Result<Config> {
-        self.config_with_detector(crate::installers::detect)
+        let folders = self.app_folders()?;
+        self.config_with_detector(|app| crate::installers::detect_in(app, &folders))
+    }
+    /// Folders searched for installed apps: the chosen app folder first, then the standard ones.
+    pub fn app_folders(&self) -> Result<Vec<PathBuf>> {
+        let prefs = self.preferences()?;
+        let mut folders = Vec::new();
+        if !prefs.install_folder.is_empty() {
+            folders.push(PathBuf::from(&prefs.install_folder));
+        }
+        folders.push(PathBuf::from("/Applications"));
+        if let Some(home) = std::env::var_os("HOME") {
+            folders.push(PathBuf::from(home).join("Applications"));
+        }
+        folders.extend(prefs.previous_install_folders.iter().map(PathBuf::from));
+        let mut seen = std::collections::BTreeSet::new();
+        folders.retain(|f| seen.insert(f.clone()));
+        Ok(folders)
+    }
+    /// Where new installs go: the chosen app folder, else /Applications.
+    pub fn install_folder(&self) -> Result<PathBuf> {
+        let custom = self.preferences()?.install_folder;
+        Ok(if custom.is_empty() {
+            PathBuf::from("/Applications")
+        } else {
+            PathBuf::from(custom)
+        })
     }
     fn config_with_detector(
         &self,

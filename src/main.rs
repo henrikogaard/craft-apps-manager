@@ -1,11 +1,7 @@
 mod native_menu;
 mod web_ui;
-#[derive(Default, serde::Serialize, serde::Deserialize)]
-pub struct Locations {
-    pub root: Option<std::path::PathBuf>,
-    pub tools: Option<std::path::PathBuf>,
-}
 use anyhow::{Context, Result};
+use craft_apps_manager::model::Locations;
 use craft_apps_manager::{builder, files, jobs::Job, model::Paths, tools, updates};
 use std::{fs, path::PathBuf};
 fn main() {
@@ -42,9 +38,8 @@ fn run() -> Result<()> {
             .and_then(|i| args.get(i + 1))
             .map(PathBuf::from)
     };
-    let home = PathBuf::from(std::env::var_os("HOME").context("No macOS home directory")?)
-        .join("Library/Application Support/Craft Apps Manager");
-    let saved: Locations = files::read_or_default(&home.join("data-root.json"))?;
+    let home = Locations::home()?;
+    let saved = Locations::read()?;
     let root = arg("--root").or(saved.root).unwrap_or_else(|| home.clone());
     let paths = Paths::new(root, arg("--tools").or(saved.tools));
     if let Some(i) = args

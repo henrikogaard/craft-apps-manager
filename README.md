@@ -52,6 +52,8 @@ backups/     previous app versions
 logs/        install, build and check logs
 ```
 
+You can put the library somewhere else, an external drive for example, in Settings. Craft Library moves everything over and restarts. Apps install to /Applications unless you pick another folder there, and it offers to move the apps you already have.
+
 ## Building Craft Library itself
 
 It's Rust. The window is a local HTML page (`src/web/index.html`) shown through [Wry](https://github.com/tauri-apps/wry) and [Tao](https://github.com/tauri-apps/tao). Nothing loads from the network.

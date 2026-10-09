@@ -1,9 +1,11 @@
 fn main() {
     println!("cargo:rerun-if-changed=native/sparkle.m");
     println!("cargo:rerun-if-changed=native/dock.m");
+    println!("cargo:rerun-if-changed=native/folder.m");
     cc::Build::new()
         .file("native/sparkle.m")
         .file("native/dock.m")
+        .file("native/folder.m")
         .flag("-fobjc-arc")
         .flag("-fblocks")
         .compile("craft_sparkle");

@@ -326,14 +326,19 @@ fn install(paths: &Paths, app: &str, bundle: &Path, job: &Job) -> Result<Install
         fs::create_dir_all(&folder)?;
         return install_in(paths, app, bundle, &folder, job, true);
     }
-    let existing = crate::installers::detect(app)?;
-    let mut folder = existing
-        .as_ref()
-        .map(|r| PathBuf::from(&r.path))
-        .unwrap_or_else(|| PathBuf::from("/Applications"));
+    // Updates replace the app where it is; Move to app folder relocates it.
+    let existing = crate::installers::detect_in(app, &paths.app_folders()?)?;
+    let custom = !paths.preferences()?.install_folder.is_empty();
+    let mut folder = match &existing {
+        Some(record) => PathBuf::from(&record.path),
+        None => paths.install_folder()?,
+    };
+    if existing.is_none() && custom {
+        fs::create_dir_all(&folder)?;
+    }
     if !writable(&folder) {
-        if existing.is_some() {
-            bail!("Installed app folder is not writable");
+        if existing.is_some() || custom {
+            bail!("{} is not writable", folder.display());
         }
         folder = PathBuf::from(std::env::var_os("HOME").context("Missing home folder")?)
             .join("Applications");
@@ -435,6 +440,110 @@ fn install_in(
     ));
     Ok(record)
 }
+/// Moves an installed app into the chosen app folder. Same-volume moves are a rename;
+/// across volumes the bundle is copied, verified, and only then removed from its old place.
+pub fn move_app(paths: &Paths, app: &str, job: &Job) -> Result<PathBuf> {
+    crate::model::valid_app(app)?;
+    let _lock = platform::Lock::take("Local\\CraftAppsManager")?;
+    let installed = crate::apps::installed(paths, app)?;
+    if installed.install_kind != "installer" {
+        bail!("Only apps installed in an applications folder can be moved");
+    }
+    let bundle = crate::model::installed_executable(Path::new(&installed.path), app)
+        .context("Installed app bundle is missing")?;
+    let to = paths.install_folder()?;
+    if platform::running_app(app)? {
+        bail!("Close {} before moving it", crate::model::title(app));
+    }
+    let moved = relocate_bundle(app, &bundle, &to, job)?;
+    job.log(&format!(
+        "Moved {} to {}",
+        crate::model::title(app),
+        to.display()
+    ));
+    Ok(moved)
+}
+/// Moves every installed app that is outside the chosen app folder, continuing past failures.
+pub fn move_apps(paths: &Paths, job: &Job) -> Result<()> {
+    let to = paths.install_folder()?;
+    let apps: Vec<_> = paths
+        .config()?
+        .apps
+        .into_iter()
+        .filter(|a| a.install_kind == "installer" && !a.path.is_empty())
+        .filter(|a| Path::new(&a.path) != to)
+        .collect();
+    let mut failures = 0;
+    for (n, app) in apps.iter().enumerate() {
+        job.check()?;
+        job.stage(
+            "Moving apps",
+            Some(n as f32 / apps.len() as f32),
+            crate::model::title(&app.name),
+        );
+        if let Err(error) = move_app(paths, &app.name, job) {
+            job.check()?;
+            failures += 1;
+            job.log(&format!("{}: {error:#}", app.name));
+        }
+    }
+    if failures > 0 {
+        bail!(
+            "{failures} of {} app(s) could not be moved; see the activity log",
+            apps.len()
+        );
+    }
+    Ok(())
+}
+fn relocate_bundle(app: &str, bundle: &Path, to: &Path, job: &Job) -> Result<PathBuf> {
+    let name = bundle.file_name().context("Missing bundle name")?;
+    if !owned_bundle(bundle, app) {
+        bail!(
+            "{} is not a {} bundle",
+            bundle.display(),
+            crate::model::title(app)
+        );
+    }
+    if bundle.parent() == Some(to) {
+        return Ok(bundle.to_path_buf());
+    }
+    fs::create_dir_all(to)?;
+    if files::linked(to)? {
+        bail!("{} is a link; choose the real folder", to.display());
+    }
+    let dest = to.join(name);
+    if fs::symlink_metadata(&dest).is_ok() {
+        bail!("{} already exists", dest.display());
+    }
+    if fs::rename(bundle, &dest).is_ok() {
+        return Ok(dest);
+    }
+    // Different volume: copy beside the destination, verify, publish, then remove the original.
+    let stage = to.join(format!(".craft-move-{}", uuid::Uuid::new_v4().simple()));
+    fs::create_dir_all(&stage)?;
+    let result = (|| -> Result<()> {
+        let staged = stage.join(name);
+        job.stage(
+            "Moving apps",
+            None,
+            format!("Copying {}", name.to_string_lossy()),
+        );
+        copy_bundle(bundle, &staged)?;
+        verify(&staged, app)?;
+        fs::rename(&staged, &dest)?;
+        Ok(())
+    })();
+    let _ = fs::remove_dir_all(&stage);
+    result?;
+    fs::remove_dir_all(bundle).with_context(|| {
+        format!(
+            "Copied to {}, but could not remove {}",
+            dest.display(),
+            bundle.display()
+        )
+    })?;
+    Ok(dest)
+}
 /// Moves bundles left under an app's former name (PrintCraft.app beside PdfCraft.app)
 /// to the Trash after the current bundle is installed, so one copy remains and the
 /// old one stays recoverable. Links and bundles of other apps are never touched.
@@ -482,9 +591,10 @@ pub fn restore(paths: &Paths, app: &str, backup: &Path, job: &Job) -> Result<()>
     files::inside(backup, &paths.at("backups/releases"))?;
     files::no_links(backup)?;
     let record: Installed = files::read_json(&backup.join("installed-app.json"))?;
-    let allowed = record.path == "/Applications"
-        || std::env::var_os("HOME")
-            .is_some_and(|h| PathBuf::from(h).join("Applications") == Path::new(&record.path));
+    let allowed = paths
+        .app_folders()?
+        .iter()
+        .any(|folder| folder == Path::new(&record.path));
     let portable = record.install_kind == "portable"
         && Path::new(&record.path) == paths.at(format!("releases/{app}"));
     if record.name != app || !(allowed || portable) {
@@ -785,6 +895,44 @@ pub fn install_available(paths: &Paths, job: &Job) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn relocating_a_bundle_moves_it_and_refuses_conflicts_and_foreign_bundles() {
+        let root = std::env::temp_dir().join(format!("craft-move-{}", uuid::Uuid::new_v4()));
+        let id = identities("wordcraft").remove(0);
+        let bundle = |folder: &Path, id: &str| {
+            let contents = folder.join("WordCraft.app/Contents");
+            fs::create_dir_all(&contents).unwrap();
+            fs::write(
+                contents.join("Info.plist"),
+                format!(r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>{id}</string></dict></plist>"#),
+            )
+            .unwrap();
+            folder.join("WordCraft.app")
+        };
+        let job = Job::new(root.join("job.log"), &Default::default());
+        let from = root.join("Applications");
+        let to = root.join("Craft");
+        let original = bundle(&from, &id);
+        let moved = relocate_bundle("wordcraft", &original, &to, &job).unwrap();
+        assert_eq!(moved, to.join("WordCraft.app"));
+        assert!(moved.join("Contents/Info.plist").exists());
+        assert!(!original.exists());
+        // Already in place is a no-op.
+        assert_eq!(
+            relocate_bundle("wordcraft", &moved, &to, &job).unwrap(),
+            moved
+        );
+        // A bundle already at the destination is never overwritten.
+        let second = bundle(&from, &id);
+        assert!(relocate_bundle("wordcraft", &second, &to, &job).is_err());
+        assert!(second.exists());
+        // Another app's bundle under the same name is refused.
+        fs::remove_dir_all(&second).unwrap();
+        let foreign = bundle(&from, "com.example.other");
+        assert!(relocate_bundle("wordcraft", &foreign, &root.join("Other"), &job).is_err());
+        assert!(foreign.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn legacy_printcraft_bundle_moves_to_trash_but_unrelated_and_linked_bundles_stay() {
         let root = std::env::temp_dir().join(format!("craft-legacy-{}", uuid::Uuid::new_v4()));

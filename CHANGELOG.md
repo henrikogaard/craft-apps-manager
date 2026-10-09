@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Choose where apps install. Pick another folder in Settings, and Craft Library offers to move the apps you already have there. Single apps can be moved from their details.
+- Move the library (downloads, sources, builds, backups and logs) to another folder or drive. Saved paths and scheduled checks follow it, and Craft Library restarts when it's done. You can also point it at a library that's already somewhere else.
+- Folders you used before are still searched, so apps left in them keep showing up and updating.
+
 ## 0.1.4
 
 - Plainer wording across the app, and less of it. Removed the fork line from Settings and the slogans from the library, details panel and status bar.

@@ -41,7 +41,7 @@ Leave out `--latest` to build from the source archive you already downloaded. `-
 
 ## Where things go
 
-The library lives in `~/Library/Application Support/Craft Apps Manager`:
+By default the library lives in `~/Library/Application Support/Craft Apps Manager`:
 
 ```text
 releases/    downloaded releases
@@ -52,7 +52,15 @@ backups/     previous app versions
 logs/        install, build and check logs
 ```
 
-You can put the library somewhere else, an external drive for example, in Settings. Craft Library moves everything over and restarts. Apps install to /Applications unless you pick another folder there, and it offers to move the apps you already have.
+### Changing folders
+
+Open **Settings** at the bottom of the sidebar. The Folders section has both choices.
+
+**Install apps in** picks where apps go. The default is Applications. Choose Another folder and pick one, or Inside the library to keep apps in the library's `releases` folder. When you pick a new folder, Craft Library offers to move the apps you already have. You can also move a single app from its details. Apps you leave behind keep working and keep updating where they are.
+
+**Library folder** moves the library, to an external drive for example. Pick a folder, then choose Move library to bring everything over (the folder has to be empty), or Use as it is if it already holds a library. Craft Library restarts when it's done.
+
+The library location is saved in `data-root.json` in the default folder above, which never moves. Scripts can override it with `--root /some/folder`, and `--tools /some/folder` sets where build tools go.
 
 ## Building Craft Library itself
 

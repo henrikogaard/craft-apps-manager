@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- Plainer wording across the app, and less of it. Removed the fork line from Settings and the slogans from the library, details panel and status bar.
+- Rewrote the README.
+
 ## 0.1.3
 
 - Right-click the Craft Library Dock icon to open any installed app; the Dock icon shows how many updates are waiting.

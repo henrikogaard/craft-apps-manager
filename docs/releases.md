@@ -4,7 +4,7 @@ Craft Library embeds Sparkle 2.10.0, pinned by SHA-256 in `config/sparkle.json`.
 
 ## Release workflow
 
-Push a version tag matching Cargo.toml, such as `v0.1.0`, after reviewing the release commit. `.github/workflows/release.yml` runs formatting, tests and Clippy, builds for Apple Silicon and Intel, signs nested helpers/frameworks and the app with Developer ID and hardened runtime, submits the ZIP to Apple, staples the accepted ticket, verifies the signature and Gatekeeper, and generates an Ed25519-signed Sparkle appcast. It publishes the ZIP, appcast.xml and SHA256SUMS in that tag's GitHub Release.
+Push a version tag matching Cargo.toml, such as `v0.1.0`, after reviewing the release commit. `.github/workflows/release.yml` runs formatting, tests and Clippy, builds for Apple Silicon and Intel, signs nested helpers/frameworks and the app with Developer ID and hardened runtime, notarizes and staples `Craft Library.app`, wraps it in a signed DMG with an Applications shortcut, notarizes and staples the DMG, verifies signatures and Gatekeeper, and generates an Ed25519-signed Sparkle appcast that points at the DMG. It publishes the DMG, appcast.xml and SHA256SUMS in that tag's GitHub Release.
 
 The feed is `https://github.com/henrikogaard/craft-apps-manager/releases/latest/download/appcast.xml`. It is unavailable until the first release is published. Every subsequent release must have a greater CFBundleVersion; packaging currently uses the Cargo version for both display and bundle versions. Preserve the bundle identifier and Sparkle key pair across releases. A manager repository override does not redirect Craft app repositories; configure the feed separately when distributing another fork.
 
@@ -23,6 +23,6 @@ On 2026-10-08 all four secrets and four variables were configured by metadata re
 
 ## Local packaging
 
-The package script defaults to ad-hoc signing for development. Set CRAFT_SIGN_IDENTITY to a Developer ID Application identity for distribution signing. `scripts/release-macos.sh` requires that identity, APPSTORE_API_KEY_FILE, APPSTORE_API_KEY_ID, APPSTORE_API_ISSUER_ID, SPARKLE_PRIVATE_KEY_FILE and CRAFT_RELEASE_TAG. It builds a universal archive and performs notarization and appcast generation without publishing it.
+The package script defaults to ad-hoc signing for development. Set CRAFT_SIGN_IDENTITY to a Developer ID Application identity for distribution signing. `scripts/release-macos.sh` requires that identity, APPSTORE_API_KEY_FILE, APPSTORE_API_KEY_ID, APPSTORE_API_ISSUER_ID, SPARKLE_PRIVATE_KEY_FILE and CRAFT_RELEASE_TAG. It builds the universal app and DMG and performs notarization and appcast generation without publishing them.
 
 Sources: [Sparkle setup](https://sparkle-project.org/documentation/), [programmatic setup](https://sparkle-project.org/documentation/programmatic-setup/), [publishing updates](https://sparkle-project.org/documentation/publishing/), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).

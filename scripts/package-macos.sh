@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds a universal (Apple silicon + Intel) Craft Apps Manager.app and a ZIP of it.
+# Builds a universal (Apple silicon + Intel) Craft Library.app and a DMG to install it.
 # Set CRAFT_MANAGER_REPOSITORY=owner/name to self-update from a fork's releases.
 set -eu
 project=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -22,9 +22,9 @@ for target in $targets; do
 done
 mkdir -p "$output"
 output=$(CDPATH= cd -- "$output" && pwd)
-bundle="$output/Craft Apps Manager.app"
-archive="$output/Craft-Apps-Manager-$version-macos-$arch.zip"
-[ ! -e "$archive" ] || { echo "Package already exists: $archive" >&2; exit 1; }
+bundle="$output/Craft Library.app"
+dmg="$output/Craft-Library-$version-macos-$arch.dmg"
+[ ! -e "$dmg" ] || { echo "Package already exists: $dmg" >&2; exit 1; }
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 if [ "$arch" = universal ]; then
@@ -79,5 +79,5 @@ mkdir -p "$bundle/Contents/Frameworks" "$bundle/Contents/Resources/licenses/spar
 ditto --noextattr --norsrc vendor/Sparkle/Sparkle.framework "$bundle/Contents/Frameworks/Sparkle.framework"
 cp vendor/Sparkle/LICENSE "$bundle/Contents/Resources/licenses/sparkle/LICENSE"
 python3 scripts/sign-bundle.py "$bundle" "${CRAFT_SIGN_IDENTITY:--}"
-ditto -c -k --norsrc --noextattr --keepParent "$bundle" "$archive"
-printf '%s\n' "$bundle" "$archive"
+./scripts/make-dmg.sh "$bundle" "$dmg"
+printf '%s\n' "$bundle" "$dmg"

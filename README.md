@@ -38,7 +38,7 @@ CRAFT_MANAGER_ARCH=arm64 ./scripts/package-macos.sh
 
 Use `x64` for an Intel-only manager or omit `CRAFT_MANAGER_ARCH` for a universal build. A universal build requires both Rust Mac targets. See [macOS build instructions](docs/macos.md#building).
 
-Copy `Craft Apps Manager.app` into Applications. Local packages default to ad-hoc signing. Tagged releases use Developer ID signing, Apple notarization and Sparkle update signatures. A quarantined download may require approval in macOS **System Settings → Privacy & Security**.
+Open the DMG and drag `Craft Library.app` onto the Applications shortcut. Local packages default to ad-hoc signing. Tagged releases use Developer ID signing, Apple notarization and Sparkle update signatures. A quarantined download may require approval in macOS **System Settings → Privacy & Security**.
 
 1. Choose an app from **All apps** or **My apps**.
 2. Use **Install latest** to download a verified official release, or build official source when no compatible release exists. Close the Craft app before replacing it.

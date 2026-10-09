@@ -69,13 +69,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$CRAFT_RELEASE_TAG" dist/macos/*.zip dist/macos/appcast.xml dist/macos/SHA256SUMS --verify-tag --title "Craft Library ${CRAFT_RELEASE_TAG#v}" --generate-notes
+          gh release create "$CRAFT_RELEASE_TAG" dist/macos/*.dmg dist/macos/appcast.xml dist/macos/SHA256SUMS --verify-tag --title "Craft Library ${CRAFT_RELEASE_TAG#v}" --generate-notes
       - name: Preserve release diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-evidence
-          path: dist/macos/notarization.json
+          path: dist/macos/notarization*.json
           if-no-files-found: ignore
       - name: Remove signing material
         if: always()

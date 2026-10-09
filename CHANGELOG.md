@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Ship a signed and notarized DMG with an Applications shortcut instead of a ZIP.
+- Rename the app bundle and download to Craft Library.
+
 ## 0.1.0 — macOS fork
 
 - Start Henrik Øgård’s macOS-only fork of CryptoKey98’s Craft Apps Manager.

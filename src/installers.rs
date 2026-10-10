@@ -58,7 +58,7 @@ pub fn detect(app: &str) -> Result<Option<Installed>> {
 }
 /// Finds an installed app in the first of `folders` that holds a matching bundle.
 pub fn detect_in(app: &str, folders: &[PathBuf]) -> Result<Option<Installed>> {
-    if !crate::model::APPS.contains(&app) {
+    if !crate::model::is_app(app) {
         return Ok(None);
     }
     for folder in folders {

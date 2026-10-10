@@ -69,8 +69,9 @@ fn managed_name(s: &str, source: bool, app: Option<&str>) -> bool {
         r"^([a-z]+)-\d+\.\d+\.\d+-[a-f0-9]{32}(?:\.(?:zip|7z))?$"
     };
     let re = regex::Regex::new(pattern).unwrap();
-    re.captures(s)
-        .is_some_and(|c| SOURCES.contains(&&c[1]) && app.is_none_or(|n| n == &c[1]))
+    re.captures(s).is_some_and(|c| {
+        (SOURCES.contains(&&c[1]) || crate::model::is_app(&c[1])) && app.is_none_or(|n| n == &c[1])
+    })
 }
 #[derive(Clone)]
 pub struct Backup {

@@ -6,6 +6,7 @@ pub mod activity;
 pub mod apps;
 pub mod backups;
 pub mod builder;
+pub mod catalog;
 pub mod dock;
 pub mod files;
 pub mod hourly;

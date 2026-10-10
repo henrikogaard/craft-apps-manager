@@ -72,10 +72,21 @@ pub fn repository(name: &str) -> &str {
     }
 }
 pub fn valid_app(name: &str) -> Result<()> {
-    if !SOURCES.contains(&name) {
+    if !is_app(name) {
         bail!("Unknown app: {name}");
     }
     Ok(())
+}
+/// A built-in app, or one discovered on Storytold's GitHub since this release.
+pub fn is_app(name: &str) -> bool {
+    APPS.contains(&name) || crate::catalog::contains(name)
+}
+/// Built-in apps followed by discovered ones.
+pub fn all_apps() -> Vec<String> {
+    APPS.iter()
+        .map(|a| a.to_string())
+        .chain(crate::catalog::apps().into_iter().map(|a| a.id))
+        .collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,8 +158,7 @@ impl Preferences {
                 bail!("The app folder must be an absolute folder path");
             }
         }
-        self.skipped_versions
-            .retain(|app, _| APPS.contains(&app.as_str()));
+        self.skipped_versions.retain(|app, _| is_app(app));
         if !SHORTCUTS.contains(&self.global_shortcut.as_str()) {
             self.global_shortcut.clear();
         }
@@ -158,7 +168,7 @@ impl Preferences {
         self.previous_install_folders.dedup();
         self.previous_install_folders.truncate(5);
         self.backup_versions = self.backup_versions.clamp(1, 10);
-        self.selected_apps.retain(|s| APPS.contains(&s.as_str()));
+        self.selected_apps.retain(|s| is_app(s));
         self.selected_apps.sort();
         self.selected_apps.dedup();
         self.selected_sources
@@ -167,10 +177,10 @@ impl Preferences {
         self.selected_sources.dedup();
         let mut seen = std::collections::BTreeSet::new();
         self.app_order
-            .retain(|s| APPS.contains(&s.as_str()) && seen.insert(s.clone()));
-        for name in APPS {
-            if seen.insert(name.to_owned()) {
-                self.app_order.push(name.to_owned());
+            .retain(|s| is_app(s) && seen.insert(s.clone()));
+        for name in all_apps() {
+            if seen.insert(name.clone()) {
+                self.app_order.push(name);
             }
         }
         Ok(())
@@ -334,7 +344,8 @@ impl Paths {
             return self.refresh_config(config, &detect);
         }
         let mut apps = Vec::new();
-        for name in APPS {
+        for name in all_apps() {
+            let name = name.as_str();
             let mut found: Vec<_> = std::fs::read_dir(self.at("releases"))
                 .into_iter()
                 .flatten()
@@ -394,10 +405,10 @@ impl Paths {
         let installer = self.preferences()?.release_format == "installer";
         // Add catalog entries when upgrading an existing library without
         // changing saved selections, installations, or the user's app order.
-        for name in APPS {
+        for name in all_apps() {
             if !config.apps.iter().any(|app| app.name == name) {
                 config.apps.push(Installed {
-                    name: name.into(),
+                    name,
                     architecture: default_arch(),
                     ..Default::default()
                 });

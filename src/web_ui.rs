@@ -5,7 +5,7 @@ use craft_apps_manager::{
     activity, apps, backups, builder, dock, files,
     jobs::Job,
     library, macos_build,
-    model::{self, BuilderPreferences, Paths, Preferences, APPS},
+    model::{self, BuilderPreferences, Paths, Preferences},
     platform, scheduler, self_update, tools, updates,
 };
 use serde::{Deserialize, Serialize};
@@ -160,11 +160,17 @@ fn html() -> String {
             &STANDARD.encode(include_bytes!("../assets/fonts/Space-Grotesk.ttf")),
         )
 }
+/// Placeholder icon for discovered apps, encoded once.
+fn manager_icon() -> &'static str {
+    static ICON: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ICON.get_or_init(|| png(include_bytes!("../assets/icon.png")))
+}
 fn snapshot(paths: &Paths) -> Result<Value> {
     let config = paths.config()?;
     let mut builds = BTreeMap::new();
     let mut backup_items = BTreeMap::new();
-    for app in APPS {
+    let everything = model::all_apps();
+    for app in everything.iter().map(String::as_str) {
         if let Some(out) = builder::history(paths, app) {
             let metadata: model::BuildInfo = files::read_json(&out.join("build-info.json"))?;
             let bundle = out.join(model::executable_name(app));
@@ -197,7 +203,7 @@ fn snapshot(paths: &Paths) -> Result<Value> {
         .collect();
     let launches: BTreeMap<String, i64> = files::read_or_default(&paths.at(LAUNCHES))?;
     Ok(
-        json!({"apps":config.apps,"updates":updates,"launches":launches,"activity":activity::read(paths).unwrap_or_default(),"startAtLogin":dock::login_enabled(),"library":paths.root,"defaultLibrary":model::Locations::home()?,"installFolder":paths.install_folder()?,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
+        json!({"apps":config.apps,"discovered":craft_apps_manager::catalog::apps().into_iter().map(|a| json!({"id":a.id,"name":a.title,"category":"New","description":a.description,"icon":manager_icon(),"discovered":true})).collect::<Vec<_>>(),"updates":updates,"launches":launches,"activity":activity::read(paths).unwrap_or_default(),"startAtLogin":dock::login_enabled(),"library":paths.root,"defaultLibrary":model::Locations::home()?,"installFolder":paths.install_folder()?,"builds":builds,"backups":backup_items,"preferences":prefs,"buildPreferences":paths.builder_preferences()?,"sparkle":null,"ui":{"theme":if appearance.theme == "light" {"light"} else {"dark"}},"auto":scheduler::enabled(false),"autoSource":scheduler::enabled(true),"version":env!("CARGO_PKG_VERSION")}),
     )
 }
 const LAUNCHES: &str = "runtime/launches.json";
@@ -350,7 +356,17 @@ fn operation(
         "setup" => tools::setup(paths, app, job),
         "install-build" => macos_build::install_build(paths, app, job),
         "check-source" => macos_build::check_source(paths, app, job),
-        "check-updates" => craft_apps_manager::hourly::check_installed(paths, job),
+        "check-updates" => {
+            match craft_apps_manager::catalog::refresh(paths, true) {
+                Ok(new) => {
+                    for app in new {
+                        job.log(&format!("Found a new Craft app: {}", app.title));
+                    }
+                }
+                Err(e) => job.log(&format!("Could not look for new Craft apps: {e:#}")),
+            }
+            craft_apps_manager::hourly::check_installed(paths, job)
+        }
         "check-release" => {
             let update = updates::newer_release(paths, app)?;
             let result = update.as_ref().map(|u| u.version.clone());
@@ -432,10 +448,18 @@ fn update_dock(value: &Value) {
         .filter(|a| a["path"].as_str().is_some_and(|p| !p.is_empty()))
         .filter_map(|a| a["name"].as_str())
         .collect();
+    let discovered = craft_apps_manager::catalog::apps();
     let apps: Vec<_> = CATALOG
         .iter()
-        .filter(|(id, ..)| installed.contains(id))
         .map(|(id, _, _, bytes)| (*id, model::title(id), *bytes))
+        .chain(discovered.iter().map(|a| {
+            (
+                a.id.as_str(),
+                a.title.clone(),
+                include_bytes!("../assets/icon.png").as_slice(),
+            )
+        }))
+        .filter(|(id, ..)| installed.contains(id))
         .collect();
     dock::set_apps(&apps);
     let updates = value["updates"].as_object().map_or(0, |u| {
@@ -589,6 +613,20 @@ pub fn run(paths: Paths) -> Result<()> {
                     startup_pending = false;
                     if let Some(app) = &initial_app { if model::valid_app(app).is_ok() { let _ = web.evaluate_script(&format!("choose({})", json!(app))); } }
                     let prefs = paths.preferences().unwrap_or_default();
+                    // Look for new Craft apps every few hours, in the background.
+                    {
+                        let p = paths.clone(); let tx = proxy.clone();
+                        std::thread::spawn(move || {
+                            if let Ok(new) = craft_apps_manager::catalog::refresh(&p, false) {
+                                if !new.is_empty() {
+                                    let names: Vec<_> = new.iter().map(|a| a.title.clone()).collect();
+                                    let _ = craft_apps_manager::activity::record(&p, craft_apps_manager::activity::Entry { time: chrono::Utc::now().timestamp(), action: "discover".into(), stage: "Complete".into(), lines: names.iter().map(|n| format!("Found a new Craft app: {n}")).collect(), ..Default::default() });
+                                    post(&tx, UiEvent::Feedback(format!("New in Craft Library: {}", names.join(", "))));
+                                    refresh(&p, &tx);
+                                }
+                            }
+                        });
+                    }
                     if prefs.check_installed_apps_on_startup {
                         let p = paths.clone(); let tx = proxy.clone();
                         std::thread::spawn(move || { if let Err(e) = craft_apps_manager::hourly::run(&p, &Job::new(p.at("logs/checks.log"), &Default::default())) { post(&tx, UiEvent::Feedback(format!("Startup check failed: {e:#}"))); } refresh(&p, &tx); });
@@ -751,7 +789,7 @@ pub fn run(paths: Paths) -> Result<()> {
                 if last_running_poll.elapsed() >= Duration::from_secs(3) && !polling.swap(true, Ordering::AcqRel) {
                     last_running_poll = Instant::now();
                     let tx = proxy.clone(); let polling = polling.clone();
-                    std::thread::spawn(move || { if let Ok(apps) = platform::running_apps(APPS) { post(&tx, UiEvent::Running(apps)); } polling.store(false, Ordering::Release); });
+                    std::thread::spawn(move || { if let Ok(apps) = platform::running_apps(model::all_apps().iter().map(String::as_str)) { post(&tx, UiEvent::Running(apps)); } polling.store(false, Ordering::Release); });
                 }
             },
             _ => {},
@@ -770,7 +808,7 @@ mod tests {
             .iter()
             .map(|v| v["id"].as_str().unwrap())
             .collect();
-        assert_eq!(ids, APPS);
+        assert_eq!(ids, model::APPS);
         let source = html();
         assert!(!source.contains("__CATALOG__"));
         assert!(!source.contains("__BODY_FONT__"));

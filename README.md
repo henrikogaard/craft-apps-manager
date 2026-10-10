@@ -25,7 +25,7 @@ Download the DMG from [releases](https://github.com/henrikogaard/craft-apps-mana
 
 Everything comes from the official `storytold/<app>` repositories. A failed checksum, signature or Gatekeeper check stops the install. It never falls back to a source build to get around that.
 
-The 14 apps are DesignCraft, EffectCraft, FilmCraft, LightCraft, PhotoCraft, PDFCraft, VectorCraft, WordCraft, GridCraft, DeckCraft, CADCraft, SoundCraft, ArtCraft and ArtCraft X. ArtCraft X is experimental and has no release yet.
+The 14 apps are DesignCraft, EffectCraft, FilmCraft, LightCraft, PhotoCraft, PDFCraft, VectorCraft, WordCraft, GridCraft, DeckCraft, CADCraft, SoundCraft, ArtCraft and ArtCraft X. ArtCraft X is experimental and has no release yet. When Storytold publishes a new Craft app with a Mac release, it shows up in Craft Library by itself, marked New. Craft Library looks every six hours and whenever you press Check all.
 
 ## Building apps from source
 

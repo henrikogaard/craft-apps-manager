@@ -71,9 +71,7 @@ pub fn installed_check_targets(config: &crate::model::Config) -> Vec<crate::mode
         .apps
         .iter()
         .filter(|app| {
-            crate::model::APPS.contains(&app.name.as_str())
-                && !app.path.is_empty()
-                && !app.version.is_empty()
+            crate::model::is_app(&app.name) && !app.path.is_empty() && !app.version.is_empty()
         })
         .cloned()
         .collect()

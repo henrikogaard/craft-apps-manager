@@ -836,6 +836,12 @@ pub fn install_latest(paths: &Paths, app: &str, job: &Job) -> Result<()> {
         }
         return Ok(());
     }
+    if !supported(app) {
+        bail!(
+            "{} has no Mac release yet. Craft Library can only build the apps it has a recipe for.",
+            crate::model::title(app)
+        );
+    }
     job.log("No compatible official Mac release is available. Building the latest official source instead.");
     if tools::preflight(paths, app).is_err() {
         tools::setup(paths, app, job)?;

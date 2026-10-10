@@ -42,6 +42,8 @@ fn run() -> Result<()> {
     let saved = Locations::read()?;
     let root = arg("--root").or(saved.root).unwrap_or_else(|| home.clone());
     let paths = Paths::new(root, arg("--tools").or(saved.tools));
+    // Apps found on Storytold's GitHub since this release are valid everywhere from here on.
+    craft_apps_manager::catalog::load(&paths);
     if let Some(i) = args
         .iter()
         .position(|s| s == "--build-app" || s == "--install-build" || s == "--install-latest")

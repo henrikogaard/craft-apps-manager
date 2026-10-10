@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- New Craft apps show up by themselves. Every six hours, and on Check all, Craft Library looks at Storytold's GitHub for new `…craft` apps with a Mac release and lists them under All apps, marked New. They install, update, open and uninstall like the others. Source builds need a recipe, so those come in a later update.
+
 ## 0.1.7
 
 - Command palette: ⌘K opens apps and runs actions like Update, Install, Check all and Settings. Search moves to /.
